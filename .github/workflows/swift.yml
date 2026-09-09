@@ -13,6 +13,18 @@ concurrency:
   group: swift-only-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  framework:
+    name: Compile universal static Swift framework
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify arm64 and x86_64 framework modules and static archives
+        run: |
+          bash Scripts/build-framework.sh
+          CONFIGURATION=Debug bash Scripts/build-framework.sh
+      # This compiler check has no generated catalogue. Release artifacts are only
+      # uploaded by build.yml after the complete reference and Metal gates pass.
   native:
     runs-on: macos-15
     timeout-minutes: 30
