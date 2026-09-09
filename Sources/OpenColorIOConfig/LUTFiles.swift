@@ -9,6 +9,7 @@ public struct OCIONativeLUT: Sendable {
     public let domainMinimum: [Double]
     public let domainMaximum: [Double]
     public let halfDomain: Bool
+    public let hueAdjust: Bool
 }
 
 public enum OCIONativeFileOperation: Sendable {
@@ -49,11 +50,12 @@ public enum OCIOLUTFile {
         guard let text, let value = Int(text), value >= 2 && value <= maximum else { throw OCIOConfigError.invalid("LUT size must be 2...\(maximum)") }
         return value
     }
-    static func lut(dimension: Int, size: Int, values: [Float], minimum: [Double] = [0, 0, 0], maximum: [Double] = [1, 1, 1], halfDomain: Bool = false) throws -> OCIONativeLUT {
+    static func lut(dimension: Int, size: Int, values: [Float], minimum: [Double] = [0, 0, 0], maximum: [Double] = [1, 1, 1], halfDomain: Bool = false, hueAdjust: Bool = false) throws -> OCIONativeLUT {
         let count = dimension == 1 ? size : size * size * size
         guard values.count == count * 3, zip(minimum, maximum).allSatisfy({ $1 > $0 }) else { throw OCIOConfigError.invalid("LUT value count or input domain is invalid") }
-        guard !halfDomain || (dimension == 1 && size == 65536) else { throw OCIOConfigError.invalid("half-domain LUT requires65536 1D entries") }
-        return OCIONativeLUT(dimension: dimension, size: size, values: values, domainMinimum: minimum, domainMaximum: maximum, halfDomain: halfDomain)
+        guard !halfDomain || (dimension == 1 && size == 65536) else { throw OCIOConfigError.invalid("half-domain LUT requires 65536 1D entries") }
+        guard !hueAdjust || dimension == 1 else { throw OCIOConfigError.invalid("hue adjustment requires a 1D LUT") }
+        return OCIONativeLUT(dimension: dimension, size: size, values: values, domainMinimum: minimum, domainMaximum: maximum, halfDomain: halfDomain, hueAdjust: hueAdjust)
     }
     public static func cube(_ source: String) throws -> [OCIONativeFileOperation] {
         var size1D: Int?, size3D: Int?
@@ -213,6 +215,22 @@ extension OCIONativeCompiler {
         func read(_ index: String) -> String { "\(texture).read(uint2((\(index)) % \(width)u, (\(index)) / \(width)u))" }
         let ranges = zip(lut.domainMinimum, lut.domainMaximum).map { $1 - $0 }
         var code = "{\n"
+        if lut.hueAdjust {
+            code += """
+            uint hueMin, hueMid, hueMax;
+            if(pixel.r <= pixel.g) {
+                if(pixel.g <= pixel.b) { hueMin=0u; hueMid=1u; hueMax=2u; }
+                else if(pixel.r <= pixel.b) { hueMin=0u; hueMid=2u; hueMax=1u; }
+                else { hueMin=2u; hueMid=0u; hueMax=1u; }
+            } else {
+                if(pixel.r <= pixel.b) { hueMin=1u; hueMid=0u; hueMax=2u; }
+                else if(pixel.g <= pixel.b) { hueMin=1u; hueMid=2u; hueMax=0u; }
+                else { hueMin=2u; hueMid=1u; hueMax=0u; }
+            }
+            float hueChroma = pixel[hueMax] - pixel[hueMin];
+            float hueFactor = hueChroma == 0.0f ? 0.0f : (pixel[hueMid] - pixel[hueMin]) / hueChroma;
+            """
+        }
         if lut.halfDomain && !helperFunctions.contains(Self.halfLUTHelpers) { helperFunctions.append(Self.halfLUTHelpers) }
         if !inverse { code += "float3 normalized = (pixel.rgb - \(mslVector(lut.domainMinimum))) / \(mslVector(ranges));\n" }
         if lut.dimension == 1 {
@@ -291,6 +309,7 @@ extension OCIONativeCompiler {
             let filtering = interpolation == "nearest" ? "nearest" : "linear"
             code += "constexpr sampler sampling(coord::normalized, address::clamp_to_edge, filter::\(filtering));\npixel.rgb = \(texture).sample(sampling, (normalized * \(mslNumber(last)) + 0.5f) / \(mslNumber(size))).rgb;\n"
         }
+        if lut.hueAdjust { code += "\npixel[hueMid] = hueFactor * (pixel[hueMax] - pixel[hueMin]) + pixel[hueMin];\n" }
         body.append(code + "\n}")
     }
 

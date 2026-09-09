@@ -54,6 +54,13 @@ jobs:
           python3 Tools/generate-legacy-reference.py
           python3 Tools/generate-fixed-reference.py
           python3 Tools/generate-grading-reference.py --fixtures Tests/OpenColorIOConfigTests/Fixtures/grading-reference.json
+          python3 Tools/generate-export-reference.py --output build/export-reference \
+            --upstream-source build/upstream --oracle-build-root build/oracle
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exported-hue-reference
+          path: build/export-reference
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
           name: exact-native-reference
@@ -100,6 +107,10 @@ jobs:
         with:
           name: exact-native-reference
           path: .
+      - uses: actions/download-artifact@v4
+        with:
+          name: exported-hue-reference
+          path: build/export-reference
       - name: Build Swift 6 package and run full metadata/configuration tests
         run: swift test
       - name: Compile every unique Metal shader
@@ -112,6 +123,8 @@ jobs:
         run: bash Scripts/build-cli.sh
       - name: Validate archive coverage
         run: dist/Debug/ocio-metal validate --archive dist/Debug/Catalogue
+      - name: Verify exported custom hue shaders against the CPU oracle
+        run: dist/Debug/ocio-metal validate --gpu --archive build/export-reference --output dist/export-validation.json
       - name: Execute CPU/Metal numerical comparison when Metal is available
         run: |
           set +e

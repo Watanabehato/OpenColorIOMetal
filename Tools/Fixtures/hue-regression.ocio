@@ -1,0 +1,176 @@
+# Development-only differential configuration: video luminance and inverse HueFX periodic bounds.
+ocio_profile_version: 2.5
+
+environment:
+  {}
+search_path: ""
+strictparsing: false
+luma: [0.2126, 0.7152, 0.0722]
+
+roles:
+  default: raw
+  scene_linear: Linear
+  compositing_log: Log
+  color_timing: Log
+  aces_interchange: Linear
+
+file_rules:
+  - !<Rule> {name: Default, colorspace: default}
+
+displays:
+  sRGB:
+    - !<View> {name: Raw, colorspace: raw}
+
+active_displays: []
+active_views: []
+
+colorspaces:
+  - !<ColorSpace>
+    name: raw
+    family: raw
+    equalitygroup: ""
+    bitdepth: 32f
+    description: A raw color space. Conversions to and from this space are no-ops.
+    isdata: true
+    allocation: uniform
+
+  - !<ColorSpace>
+    name: Linear
+    family: ""
+    equalitygroup: ""
+    bitdepth: unknown
+    isdata: false
+    allocation: uniform
+
+  - !<ColorSpace>
+    name: Video
+    family: ""
+    equalitygroup: ""
+    bitdepth: unknown
+    isdata: false
+    allocation: uniform
+    to_scene_reference: !<GradingHueCurveTransform>
+      style: video
+      hue_hue: {control_points: [0.03, 0.01470819, 0.27, 0.3064156, 0.53, 0.5179977, 0.79, 0.7825491]}
+      hue_sat: {control_points: [0.03, 1.17848, 0.27, 1.082514, 0.53, 0.9513495, 0.79, 1.020187]}
+      hue_lum: {control_points: [0.03, 0.8346943, 0.27, 0.9976508, 0.53, 0.9681807, 0.79, 1.1933]}
+      lum_sat: {control_points: [0, 1.030838, 0.3, 0.8362835, 0.65, 0.9719242, 1, 0.9164407]}
+      sat_sat: {control_points: [0, -0.04619217, 0.3, 0.2665789, 0.65, 0.6520827, 1, 1.009013]}
+      lum_lum: {control_points: [0, 0.01292218, 0.3, 0.3375738, 0.65, 0.6068257, 1, 0.98902]}
+      sat_lum: {control_points: [0, 0.9769144, 0.3, 1.08703, 0.65, 0.9365644, 1, 0.8245074]}
+      hue_fx: {control_points: [0.03, -0.1817798, 0.27, 0.1959828, 0.53, -0.1897697, 0.79, -0.0581257]}
+
+  - !<ColorSpace>
+    name: VideoHSY
+    family: ""
+    equalitygroup: ""
+    bitdepth: unknown
+    isdata: false
+    allocation: uniform
+    to_scene_reference: !<GradingHueCurveTransform>
+      style: video
+      hsy_transform: none
+      hue_hue: {control_points: [0.03, 0.02810029, 0.27, 0.2985142, 0.53, 0.5255667, 0.79, 0.7412825]}
+      hue_sat: {control_points: [0.03, 1.11022, 0.27, 0.996236, 0.53, 1.152961, 0.79, 1.055205]}
+      hue_lum: {control_points: [0.03, 0.8498887, 0.27, 1.104188, 0.53, 0.8054999, 0.79, 0.9574685]}
+      lum_sat: {control_points: [0, 1.052767, 0.3, 1.01307, 0.65, 1.071144, 1, 1.041492]}
+      sat_sat: {control_points: [0, 0.03399271, 0.3, 0.2862757, 0.65, 0.6249781, 1, 0.9555351]}
+      lum_lum: {control_points: [0, -0.01433305, 0.3, 0.3356125, 0.65, 0.6018094, 1, 1.007124]}
+      sat_lum: {control_points: [0, 0.9105306, 0.3, 0.8105169, 0.65, 1.048191, 1, 1.026727]}
+      hue_fx: {control_points: [0.03, 0.03378321, 0.27, -0.1826127, 0.53, -0.1718614, 0.79, -0.05839978]}
+
+  - !<ColorSpace>
+    name: Log
+    family: ""
+    equalitygroup: ""
+    bitdepth: unknown
+    isdata: false
+    allocation: uniform
+    to_scene_reference: !<GradingHueCurveTransform>
+      style: log
+      hue_hue: {control_points: [0.03, 0.00951026, 0.27, 0.3118887, 0.53, 0.5566101, 0.79, 0.7878737]}
+      hue_sat: {control_points: [0.03, 1.039245, 0.27, 1.097929, 0.53, 1.030702, 0.79, 0.8873248]}
+      hue_lum: {control_points: [0.03, 0.8205624, 0.27, 0.9339165, 0.53, 1.056162, 0.79, 0.9200644]}
+      lum_sat: {control_points: [0, 1.082723, 0.3, 0.8314155, 0.65, 0.875365, 1, 0.9198837]}
+      sat_sat: {control_points: [0, -0.03849673, 0.3, 0.250484, 0.65, 0.6731049, 1, 1.033582]}
+      lum_lum: {control_points: [0, -0.04066975, 0.3, 0.2716075, 0.65, 0.6664473, 1, 1.039477]}
+      sat_lum: {control_points: [0, 1.190726, 0.3, 0.8417748, 0.65, 1.015066, 1, 1.009318]}
+      hue_fx: {control_points: [0.03, -0.1171864, 0.27, -0.007505604, 0.53, -0.1942119, 0.79, 0.1046255]}
+
+  - !<ColorSpace>
+    name: LogHSY
+    family: ""
+    equalitygroup: ""
+    bitdepth: unknown
+    isdata: false
+    allocation: uniform
+    to_scene_reference: !<GradingHueCurveTransform>
+      style: log
+      hsy_transform: none
+      hue_hue: {control_points: [0.03, 0.008527593, 0.27, 0.2371121, 0.53, 0.5029656, 0.79, 0.7715056]}
+      hue_sat: {control_points: [0.03, 1.189572, 0.27, 1.102864, 0.53, 1.122965, 0.79, 0.816241]}
+      hue_lum: {control_points: [0.03, 1.099424, 0.27, 0.9513092, 0.53, 1.118555, 0.79, 0.8496521]}
+      lum_sat: {control_points: [0, 0.9478299, 0.3, 1.172474, 0.65, 1.005495, 1, 1.182509]}
+      sat_sat: {control_points: [0, -0.006181101, 0.3, 0.265645, 0.65, 0.6404476, 1, 1.034165]}
+      lum_lum: {control_points: [0, 0.04970712, 0.3, 0.2967258, 0.65, 0.6873037, 1, 1.026857]}
+      sat_lum: {control_points: [0, 1.137632, 0.3, 0.990298, 0.65, 0.9169416, 1, 1.145547]}
+      hue_fx: {control_points: [0.03, 0.0113143, 0.27, -0.1453759, 0.53, 0.1126104, 0.79, 0.1119926]}
+
+  - !<ColorSpace>
+    name: LinearCurves
+    family: ""
+    equalitygroup: ""
+    bitdepth: unknown
+    isdata: false
+    allocation: uniform
+    to_scene_reference: !<GradingHueCurveTransform>
+      style: linear
+      hue_hue: {control_points: [0.03, 0.005192651, 0.27, 0.2374818, 0.53, 0.5161041, 0.79, 0.7552297], slopes: [0.1, 0.4, 0.2, 0.5]}
+      hue_sat: {control_points: [0.03, 1.00714, 0.27, 1.16021, 0.53, 1.046345, 0.79, 0.8273442], slopes: [0.1, 0.4, 0.2, 0.5]}
+      hue_lum: {control_points: [0.03, 0.958681, 0.27, 1.043704, 0.53, 0.8296791, 0.79, 1.047742], slopes: [0.1, 0.4, 0.2, 0.5]}
+      lum_sat: {control_points: [-7, 1.170065, -1, 0.9888883, 2, 1.153963, 7, 0.886883], slopes: [0.1, 0.4, 0.2, 0.5]}
+      sat_sat: {control_points: [0, 0.02863693, 0.3, 0.3415081, 0.65, 0.6135063, 1, 0.9820787], slopes: [0.1, 0.4, 0.2, 0.5]}
+      lum_lum: {control_points: [-7, -7.040647, -1, -0.9509585, 2, 2.031774, 7, 7.002749], slopes: [0.1, 0.4, 0.2, 0.5]}
+      sat_lum: {control_points: [0, 1.043792, 0.3, 0.8732807, 0.65, 1.158335, 1, 0.9863341], slopes: [0.1, 0.4, 0.2, 0.5]}
+      hue_fx: {control_points: [0.03, -0.133505, 0.27, 0.1057222, 0.53, 0.06054111, 0.79, 0.09024477], slopes: [0.1, 0.4, 0.2, 0.5]}
+
+  - !<ColorSpace>
+    name: Composite
+    family: ""
+    equalitygroup: ""
+    bitdepth: unknown
+    isdata: false
+    allocation: uniform
+    to_scene_reference: !<GroupTransform>
+      children:
+        - !<GradingHueCurveTransform>
+          style: video
+          hue_hue: {control_points: [0.03, 0.01470819, 0.27, 0.3064156, 0.53, 0.5179977, 0.79, 0.7825491]}
+          hue_sat: {control_points: [0.03, 1.17848, 0.27, 1.082514, 0.53, 0.9513495, 0.79, 1.020187]}
+          hue_lum: {control_points: [0.03, 0.8346943, 0.27, 0.9976508, 0.53, 0.9681807, 0.79, 1.1933]}
+          lum_sat: {control_points: [0, 1.030838, 0.3, 0.8362835, 0.65, 0.9719242, 1, 0.9164407]}
+          sat_sat: {control_points: [0, -0.04619217, 0.3, 0.2665789, 0.65, 0.6520827, 1, 1.009013]}
+          lum_lum: {control_points: [0, 0.01292218, 0.3, 0.3375738, 0.65, 0.6068257, 1, 0.98902]}
+          sat_lum: {control_points: [0, 0.9769144, 0.3, 1.08703, 0.65, 0.9365644, 1, 0.8245074]}
+          hue_fx: {control_points: [0.03, -0.1817798, 0.27, 0.1959828, 0.53, -0.1897697, 0.79, -0.0581257]}
+        - !<GradingHueCurveTransform>
+          style: linear
+          hue_hue: {control_points: [0.03, 0.005192651, 0.27, 0.2374818, 0.53, 0.5161041, 0.79, 0.7552297], slopes: [0.1, 0.4, 0.2, 0.5]}
+          hue_sat: {control_points: [0.03, 1.00714, 0.27, 1.16021, 0.53, 1.046345, 0.79, 0.8273442], slopes: [0.1, 0.4, 0.2, 0.5]}
+          hue_lum: {control_points: [0.03, 0.958681, 0.27, 1.043704, 0.53, 0.8296791, 0.79, 1.047742], slopes: [0.1, 0.4, 0.2, 0.5]}
+          lum_sat: {control_points: [-7, 1.170065, -1, 0.9888883, 2, 1.153963, 7, 0.886883], slopes: [0.1, 0.4, 0.2, 0.5]}
+          sat_sat: {control_points: [0, 0.02863693, 0.3, 0.3415081, 0.65, 0.6135063, 1, 0.9820787], slopes: [0.1, 0.4, 0.2, 0.5]}
+          lum_lum: {control_points: [-7, -7.040647, -1, -0.9509585, 2, 2.031774, 7, 7.002749], slopes: [0.1, 0.4, 0.2, 0.5]}
+          sat_lum: {control_points: [0, 1.043792, 0.3, 0.8732807, 0.65, 1.158335, 1, 0.9863341], slopes: [0.1, 0.4, 0.2, 0.5]}
+          hue_fx: {control_points: [0.03, -0.133505, 0.27, 0.1057222, 0.53, 0.06054111, 0.79, 0.09024477], slopes: [0.1, 0.4, 0.2, 0.5]}
+        - !<GradingHueCurveTransform>
+          style: video
+          hsy_transform: none
+          hue_hue: {control_points: [0.03, 0.02810029, 0.27, 0.2985142, 0.53, 0.5255667, 0.79, 0.7412825]}
+          hue_sat: {control_points: [0.03, 1.11022, 0.27, 0.996236, 0.53, 1.152961, 0.79, 1.055205]}
+          hue_lum: {control_points: [0.03, 0.8498887, 0.27, 1.104188, 0.53, 0.8054999, 0.79, 0.9574685]}
+          lum_sat: {control_points: [0, 1.052767, 0.3, 1.01307, 0.65, 1.071144, 1, 1.041492]}
+          sat_sat: {control_points: [0, 0.03399271, 0.3, 0.2862757, 0.65, 0.6249781, 1, 0.9555351]}
+          lum_lum: {control_points: [0, -0.01433305, 0.3, 0.3356125, 0.65, 0.6018094, 1, 1.007124]}
+          sat_lum: {control_points: [0, 0.9105306, 0.3, 0.8105169, 0.65, 1.048191, 1, 1.026727]}
+          hue_fx: {control_points: [0.03, 0.03378321, 0.27, -0.1826127, 0.53, -0.1718614, 0.79, -0.05839978]}

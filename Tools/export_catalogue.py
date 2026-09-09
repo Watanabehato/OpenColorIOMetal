@@ -17,6 +17,7 @@ import re
 import subprocess
 import sys
 import time
+from gpu_corrections import correct_hue_shader
 
 REPOSITORY = "https://github.com/AcademySoftwareFoundation/OpenColorIO"
 
@@ -160,7 +161,7 @@ class Exporter:
                 # Dimensions, rather than height, distinguishes a 1xN 2D texture.
                 dimension = 1 if texture.dimensions == ocio.GpuShaderDesc.TEXTURE_1D else 2
                 textures.append(self.texture(texture, dimension, len(textures)))
-            source = wrap_kernel(desc.getShaderText(), textures)
+            source = wrap_kernel(correct_hue_shader(desc.getShaderText()), textures)
             shader = blob(self.root, "shaders", "metal", source.encode("utf-8"))
             definition = {"shader": shader, "kernel": "ocio_kernel", "textures": textures}
             transform_id = sha256(canonical_json(definition).encode("utf-8"))

@@ -20,7 +20,11 @@ final class NativeLegacyTests: XCTestCase {
     func testLegacyReadersAndMetalMatchUpstreamBothDirections() throws {
         guard MTLCreateSystemDefaultDevice() != nil else { throw XCTSkip("Metal hardware required for legacy LUT numerical conformance") }
         let references = try JSONDecoder().decode(Reference.self, from: Data(contentsOf: fixtures.appendingPathComponent("legacy-reference.json")))
-        XCTAssertEqual(references.cases.count, 22)
+        XCTAssertEqual(references.cases.count, 34)
+        XCTAssertEqual(Set(references.cases.map(\.file)).count, 17)
+        for file in Set(references.cases.map(\.file)) {
+            XCTAssertEqual(Set(references.cases.filter { $0.file == file }.map(\.direction)), ["forward", "inverse"])
+        }
         let engine = try MetalColorEngine()
         for reference in references.cases {
             let yaml = """
@@ -49,5 +53,15 @@ final class NativeLegacyTests: XCTestCase {
         XCTAssertThrowsError(try OCIOLUTFile.threeDL("<xml>"))
         XCTAssertThrowsError(try OCIOLUTFile.truelight("# Truelight Cube v2.0\n# width 2 2 3\n# cube\n0 0 0"))
         XCTAssertThrowsError(try OCIOLUTFile.iridasLook("<look><LUT><size>2</size><data>xx</data></LUT></look>"))
+        let look = try String(contentsOf: fixtures.appendingPathComponent("Legacy/asymmetric.look"), encoding: .utf8)
+        XCTAssertThrowsError(try OCIOLUTFile.iridasLook(look.replacingOccurrences(of: "<mask/>", with: "<mask><shape/></mask>")))
+        XCTAssertThrowsError(try OCIOLUTFile.discreet("LUT: 1 2\n0\n1\n", filename: "unknown-depth.lut"))
+    }
+    func testIridasITXMetadataDoesNotDefineAnInputDomain() throws {
+        let source = try String(contentsOf: fixtures.appendingPathComponent("Legacy/iridas_3d.itx"), encoding: .utf8)
+        let operations = try OCIOLUTFile.iridasITX("DOMAIN_MIN -1 -2 -3\nDOMAIN_MAX 2 3 4\nAdditional metadata\n" + source)
+        guard case let .lut(lut) = try XCTUnwrap(operations.first) else { return XCTFail("missing ITX 3D LUT") }
+        XCTAssertEqual(lut.domainMinimum, [0, 0, 0])
+        XCTAssertEqual(lut.domainMaximum, [1, 1, 1])
     }
 }

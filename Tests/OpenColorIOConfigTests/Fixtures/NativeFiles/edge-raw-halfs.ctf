@@ -1,0 +1,10 @@
+<ProcessList id="edge-raw-halfs" version="1.7">
+<LUT1D inBitDepth="32f" outBitDepth="32f" rawHalfs="true">
+<Array dim="4 3">
+0 0 0
+11878 11878 11878
+14336 14336 14336
+15360 15360 15360
+</Array>
+</LUT1D>
+</ProcessList>

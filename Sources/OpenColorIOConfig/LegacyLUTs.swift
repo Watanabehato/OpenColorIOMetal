@@ -5,7 +5,7 @@ import Foundation
 extension OCIOLUTFile {
     static func readLegacy(_ source: String, extension ext: String, filename: String) throws -> [OCIONativeFileOperation] {
         switch ext.lowercased() {
-        case "itx": return try cube(source)
+        case "itx": return try iridasITX(source)
         case "3dl": return try threeDL(source)
         case "mga", "m3d": return try pandora(source)
         case "cub": return try truelight(source)
@@ -13,7 +13,7 @@ extension OCIOLUTFile {
         case "csp": return try cineSpace(source)
         case "look": return try iridasLook(source)
         case "lut":
-            if rows(source).first?.first?.lowercased() == "version" { return try houdini(source) }
+            if rows(source).contains(where: { $0[0].lowercased() == "version" }) { return try houdini(source) }
             return try discreet(source, filename: filename)
         default: throw OCIOConfigError.unavailableTransform("native file format '.\(ext)' is not implemented")
         }
@@ -42,6 +42,18 @@ extension OCIOLUTFile {
             return Float((1 << (bits == 14 ? 16 : bits)) - 1)
         }
         return 65535
+    }
+    public static func iridasITX(_ source: String) throws -> [OCIONativeFileOperation] {
+        var edge: Int?, data: [Float] = []
+        for row in rows(source) {
+            if row[0].lowercased() == "lut_3d_size" {
+                guard row.count == 2 else { throw OCIOConfigError.invalid("invalid Iridas ITX size") }
+                edge = try size(row[1], maximum: 129)
+            } else if edge != nil { data += try numbers(row, count: 3).map(Float.init) }
+            // Iridas ITX ignores every line before LUT_3D_SIZE, including metadata.
+        }
+        guard let edge else { throw OCIOConfigError.invalid("Iridas ITX has no 3D LUT size") }
+        return [.lut(try lut(dimension: 3, size: edge, values: data))]
     }
     public static func threeDL(_ source: String) throws -> [OCIONativeFileOperation] {
         var shaper: [Int] = [], data: [Int] = []
@@ -88,7 +100,10 @@ extension OCIOLUTFile {
                 guard row.map({ $0.lowercased() }) == ["values", "red", "green", "blue"] else { throw OCIOConfigError.invalid("Pandora values must be red green blue") }
                 reading = true
             default:
-                if reading { data += try numbers(Array(row.dropFirst()), count: 3).map(Float.init) }
+                if reading {
+                    guard row.count == 4, row.allSatisfy({ Int($0) != nil }) else { throw OCIOConfigError.invalid("Pandora requires four integers per entry") }
+                    data += row.dropFirst().map { Float(Int($0)!) }
+                }
             }
         }
         guard let edge, let scale, data.count == edge * edge * edge * 3 else { throw OCIOConfigError.invalid("Pandora header or entry count invalid") }
@@ -99,7 +114,7 @@ extension OCIOLUTFile {
         guard lines.first?.lowercased().hasPrefix("# truelight cube") == true else { throw OCIOConfigError.invalid("missing Truelight cube header") }
         var size1D: Int?, size3D: Int?, mode = 0
         var one: [Float] = [], three: [Float] = []
-        for line in lines.dropFirst() {
+        readLines: for line in lines.dropFirst() {
             let parts = line.split(whereSeparator: \.isWhitespace).map(String.init)
             if parts.isEmpty { continue }
             if parts[0].hasPrefix("#") {
@@ -108,10 +123,12 @@ extension OCIOLUTFile {
                 case "width":
                     guard parts.count == 5, parts[2] == parts[3], parts[2] == parts[4] else { throw OCIOConfigError.invalid("Truelight width must be a uniform cube") }
                     size3D = try size(parts[2], maximum: 129)
-                case "lutlength": size1D = try size(parts.last, maximum: 1_048_576)
+                case "lutlength":
+                    guard parts.count == 3 else { throw OCIOConfigError.invalid("invalid Truelight lutlength") }
+                    size1D = try size(parts.last, maximum: 1_048_576)
                 case "inputlut": mode = 1
                 case "cube": mode = 3
-                case "end": mode = 0
+                case "end": break readLines
                 default: break
                 }
             } else if mode == 1 { one += try numbers(parts, count: 3).map(Float.init) }
@@ -138,7 +155,7 @@ extension OCIOLUTFile {
                 case "grid_size":
                     guard row.count == 4, row[1] == row[2], row[1] == row[3] else { throw OCIOConfigError.invalid("VF grid must be uniform") }
                     edge = try size(row[1], maximum: 129)
-                case "global_transform": matrix = try numbers(Array(row.dropFirst()), count: 16)
+                case "global_transform": matrix = try numbers(Array(row.dropFirst()), count: 16).map { Double(Float($0)) }
                 case "data": reading = true
                 default: break
                 }
@@ -147,7 +164,7 @@ extension OCIOLUTFile {
         guard let edge, data.count == edge * edge * edge * 3 else { throw OCIOConfigError.invalid("VF entry count differs from grid") }
         var operations: [OCIONativeFileOperation] = []
         if var matrix {
-            for row in 0..<4 { for column in 0..<3 { matrix[row * 4 + column] *= Double(edge) } }
+            for row in 0..<4 { for column in 0..<3 { matrix[row * 4 + column] = Double(Float(matrix[row * 4 + column]) * Float(edge)) } }
             operations.append(.transform(try OCIOConfigTransform(yaml: .tagged("MatrixTransform", .mapping([
                 "matrix": .sequence(matrix.map { .scalar(String($0)) })
             ])))))
@@ -193,7 +210,7 @@ extension OCIOLUTFile {
                     let fraction = Float(index) / 65535
                     let input = x[0] * (1 - fraction) + x.last! * fraction
                     while segment + 2 < x.count, input >= x[segment + 1] { segment += 1 }
-                    let z = (input - x[segment]) / (x[segment + 1] - x[segment])
+                    let z = (input - x[segment]) * (1 / (x[segment + 1] - x[segment]))
                     let p = coefficients[segment]
                     values[index * 3 + channel] = p[0] + z * (p[1] + z * (p[2] + z * p[3]))
                 }
@@ -238,8 +255,11 @@ extension OCIOLUTFile {
               let dataNode = node.children.first(where: { $0.name.lowercased() == "data" }) else {
             throw OCIOConfigError.invalid("Iridas Look needs Look/LUT/Size and Data")
         }
-        let edge = try size(sizeNode.text.filter { !$0.isWhitespace && $0 != "\"" }, maximum: 129)
-        let hex = Array(dataNode.text.filter { !$0.isWhitespace && $0 != "\"" }.utf8)
+        guard !root.children.contains(where: { $0.name == "mask" && !$0.children.isEmpty }) else {
+            throw OCIOConfigError.invalid("Iridas Look containing a mask is not a global color transform")
+        }
+        let edge = try size(sizeNode.text.filter { !$0.isWhitespace && $0 != "\"" && $0 != "'" }, maximum: 129)
+        let hex = Array(dataNode.text.filter { !$0.isWhitespace && $0 != "\"" && $0 != "'" }.utf8)
         guard hex.count == edge * edge * edge * 3 * 8 else { throw OCIOConfigError.invalid("Iridas Look hexadecimal LUT length differs from size") }
         func nibble(_ byte: UInt8) throws -> UInt32 {
             switch byte {
@@ -331,16 +351,21 @@ extension OCIOLUTFile {
                 let text = outputHalf ? String(first[3].dropLast()) : first[3]
                 guard let value = Int(text), [256, 1024, 4096, 65536].contains(value) else { throw OCIOConfigError.invalid("invalid Discreet output depth") }
                 outputCount = value
+                outputHalf = outputHalf && value == 65536
             }
         } else if first.count != 1 || Int(first[0]) == nil { throw OCIOConfigError.invalid("not a Discreet LUT file") }
         if outputCount == nil, let range = filename.lowercased().range(of: "to") {
             let suffix = filename.lowercased()[range.upperBound...]
             if suffix.hasPrefix("16f") { outputCount = 65536; outputHalf = true }
+            else if suffix.hasPrefix("32f") { outputCount = 2 }
             else {
                 for (label, value) in [("8", 256), ("10", 1024), ("12", 4096), ("16", 65536)] where suffix.hasPrefix(label) { outputCount = value; break }
             }
         }
-        let scale = Float((outputCount ?? ([256, 1024, 4096, 65536].contains(count) ? count : 2)) - 1)
+        guard let depth = outputCount ?? ([256, 1024, 4096, 65536].contains(count) ? count : nil) else {
+            throw OCIOConfigError.invalid("Discreet output bit depth is unknown")
+        }
+        let scale = Float(depth - 1)
         let tokens = lines.dropFirst(start).flatMap { $0 }
         guard tokens.count == count * tables else { throw OCIOConfigError.invalid("Discreet LUT entry count mismatch") }
         let raw = try tokens.map { text -> UInt16 in

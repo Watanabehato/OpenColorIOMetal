@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<look>
+  <shaders><description>Asymmetric RGB crosstalk fixture</description></shaders>
+  <mask/>
+  <LUT>
+    <size>'2'</size>
+    <data>'
+      8FC2F53C0AD7A33C0AD7233C5C8F423F0AD7A33D0AD7233D
+      8FC2F53D85EB513FCDCC4C3D9A99593FAE47613F0AD7A33D
+      295C8F3DCDCC4C3DF6285C3FCDCC4C3FAE47E13D0AD7633F
+      0AD7233E9A99593F6666663F0AD7633FC3F5683F7B146E3F
+    '</data>
+  </LUT>
+</look>

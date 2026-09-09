@@ -1,0 +1,11 @@
+<ProcessList id="edge-index-map" version="1.7">
+<LUT1D inBitDepth="10i" outBitDepth="32f" >
+<IndexMap dim="2">64 @ 0 940 @ 3</IndexMap>
+<Array dim="4 3">
+0 0 0
+0.2 0.2 0.2
+0.8 0.8 0.8
+1 1 1
+</Array>
+</LUT1D>
+</ProcessList>

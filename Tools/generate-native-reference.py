@@ -67,6 +67,11 @@ def main():
                 inputs = [[-0.1, 0.0, 0.01, 0.25], [0.1, 0.3, 0.6, 0.5], [0.4, 0.5, 0.8, 1.0]]
             if name.startswith("file-"):
                 inputs = [[0.0, 0.001, 0.01, 0.25], [0.1, 0.3, 0.6, 0.5], [0.4, 0.5, 0.8, 1.0]]
+            if name.startswith("file-edge-"):
+                inputs += [[-0.2, 1.1, 0.0, 0.3], [0.49999, 0.5, 0.50001, 0.9], [0.0, 0.0, 0.0, 1.0]]
+            if name == "file-edge-half-domain.ctf":
+                inputs = ([[-0.001, -0.5, -20.0, 0.25], [0.00000006, -0.0000001, 0.00006104, 0.5], [0.18, 16.01, 50000.0, 0.75], [65504.0, -65504.0, 0.0, 1.0]]
+                          if direction == "forward" else [[-0.5, -0.01, 0.0, 0.25], [0.001, 0.3, 0.8, 0.5], [-2.0, 2.0, 1.0, 1.0]])
             expected = [processor.applyRGBA(pixel) for pixel in inputs]
             cases.append({"name": name + "-" + direction, "yaml": yaml, "source": source, "destination": destination, "input": inputs, "expected": expected})
     output = {"schemaVersion": 1, "oracleVersion": ocio.__version__, "cases": cases}

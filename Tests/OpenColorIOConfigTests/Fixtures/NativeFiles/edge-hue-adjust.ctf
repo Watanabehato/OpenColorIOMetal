@@ -1,0 +1,11 @@
+<ProcessList id="edge-hue-adjust" version="1.7">
+<LUT1D inBitDepth="32f" outBitDepth="32f" hueAdjust="dw3">
+<Array dim="5 3">
+0 0 0
+0.01 0.01 0.01
+0.09 0.09 0.09
+0.36 0.36 0.36
+1 1 1
+</Array>
+</LUT1D>
+</ProcessList>

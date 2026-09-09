@@ -1448,7 +1448,7 @@ float ocio_grading_huecurve_evalBSplineCurveRevHue(int curveIdx, float x)
   float knStart = ocio_grading_huecurve_knots[knotsOffs];
   float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
   float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
-  // Match the upstream CPU HueFX lower periodic bound.
+  // Match the CPU HueFX lower periodic bound.
   knStartY = (curveIdx == 7) ? knStartY + knStart : knStartY;
   float knEndY;
   {
@@ -1843,7 +1843,7 @@ float ocio_grading_huecurve_evalBSplineCurveRevHue(int curveIdx, float x)
   float knStart = ocio_grading_huecurve_knots[knotsOffs];
   float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
   float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
-  // Match the upstream CPU HueFX lower periodic bound.
+  // Match the CPU HueFX lower periodic bound.
   knStartY = (curveIdx == 7) ? knStartY + knStart : knStartY;
   float knEndY;
   {
@@ -2127,7 +2127,7 @@ float ocio_grading_huecurve_evalBSplineCurveRevHue(int curveIdx, float x)
   float knStart = ocio_grading_huecurve_knots[knotsOffs];
   float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
   float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
-  // Match the upstream CPU HueFX lower periodic bound.
+  // Match the CPU HueFX lower periodic bound.
   knStartY = (curveIdx == 7) ? knStartY + knStart : knStartY;
   float knEndY;
   {
@@ -2411,7 +2411,7 @@ float ocio_grading_huecurve_evalBSplineCurveRevHue(int curveIdx, float x)
   float knStart = ocio_grading_huecurve_knots[knotsOffs];
   float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
   float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
-  // Match the upstream CPU HueFX lower periodic bound.
+  // Match the CPU HueFX lower periodic bound.
   knStartY = (curveIdx == 7) ? knStartY + knStart : knStartY;
   float knEndY;
   {
@@ -3454,7 +3454,7 @@ float ocio_grading_huecurve_evalBSplineCurveRevHue(int curveIdx, float x)
   float knStart = ocio_grading_huecurve_knots[knotsOffs];
   float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
   float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
-  // Match the upstream CPU HueFX lower periodic bound.
+  // Match the CPU HueFX lower periodic bound.
   knStartY = (curveIdx == 7) ? knStartY + knStart : knStartY;
   float knEndY;
   {
@@ -3803,7 +3803,7 @@ float ocio_grading_huecurve_evalBSplineCurveRevHue(int curveIdx, float x)
   float knStart = ocio_grading_huecurve_knots[knotsOffs];
   float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
   float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
-  // Match the upstream CPU HueFX lower periodic bound.
+  // Match the CPU HueFX lower periodic bound.
   knStartY = (curveIdx == 7) ? knStartY + knStart : knStartY;
   float knEndY;
   {
@@ -4087,7 +4087,7 @@ float ocio_grading_huecurve_evalBSplineCurveRevHue(int curveIdx, float x)
   float knStart = ocio_grading_huecurve_knots[knotsOffs];
   float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
   float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
-  // Match the upstream CPU HueFX lower periodic bound.
+  // Match the CPU HueFX lower periodic bound.
   knStartY = (curveIdx == 7) ? knStartY + knStart : knStartY;
   float knEndY;
   {
@@ -4371,7 +4371,7 @@ float ocio_grading_huecurve_evalBSplineCurveRevHue(int curveIdx, float x)
   float knStart = ocio_grading_huecurve_knots[knotsOffs];
   float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
   float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
-  // Match the upstream CPU HueFX lower periodic bound.
+  // Match the CPU HueFX lower periodic bound.
   knStartY = (curveIdx == 7) ? knStartY + knStart : knStartY;
   float knEndY;
   {
@@ -4644,7 +4644,6 @@ float4 grading_transform(float4 inPixel)
       
       
       hueLumGain = 1. - (1. - hueLumGain) * min( 1., outColor.g );
-      // Match the upstream CPU video luminance operation.
       outColor.b = outColor.b + (hueLumGain + satLumGain - 2.) * 0.1;
       
       outColor.r = outColor.r - floor( outColor.r );
@@ -5163,7 +5162,6 @@ float4 grading_transform(float4 inPixel)
       
       
       hueLumGain = 1. - (1. - hueLumGain) * min( 1., outColor.g );
-      // Match the upstream CPU video luminance operation.
       outColor.b = outColor.b + (hueLumGain + satLumGain - 2.) * 0.1;
       
       outColor.r = outColor.r - floor( outColor.r );
@@ -5392,7 +5390,7 @@ float ocio_grading_huecurve_evalBSplineCurveRevHue(int curveIdx, float x)
   float knStart = ocio_grading_huecurve_knots[knotsOffs];
   float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
   float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
-  // Match the upstream CPU HueFX lower periodic bound.
+  // Match the CPU HueFX lower periodic bound.
   knStartY = (curveIdx == 7) ? knStartY + knStart : knStartY;
   float knEndY;
   {
@@ -5485,7 +5483,6 @@ float4 grading_transform(float4 inPixel)
       float satLumGain = max(0., ocio_grading_huecurve_evalBSplineCurve(6, outColor.g, 1.));
       
       hueLumGain = 1. - (1. - hueLumGain) * min( 1., outColor.g );
-      // Match the upstream CPU video luminance operation.
       outColor.b = outColor.b - (hueLumGain + satLumGain - 2.) * 0.1;
       
       outColor.b = ocio_grading_huecurve_evalBSplineCurveRev(5, outColor.b);
@@ -5742,7 +5739,7 @@ float ocio_grading_huecurve_evalBSplineCurveRevHue(int curveIdx, float x)
   float knStart = ocio_grading_huecurve_knots[knotsOffs];
   float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
   float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
-  // Match the upstream CPU HueFX lower periodic bound.
+  // Match the CPU HueFX lower periodic bound.
   knStartY = (curveIdx == 7) ? knStartY + knStart : knStartY;
   float knEndY;
   {
@@ -6026,7 +6023,7 @@ float ocio_grading_huecurve_evalBSplineCurveRevHue(int curveIdx, float x)
   float knStart = ocio_grading_huecurve_knots[knotsOffs];
   float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
   float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
-  // Match the upstream CPU HueFX lower periodic bound.
+  // Match the CPU HueFX lower periodic bound.
   knStartY = (curveIdx == 7) ? knStartY + knStart : knStartY;
   float knEndY;
   {
@@ -6310,7 +6307,7 @@ float ocio_grading_huecurve_evalBSplineCurveRevHue(int curveIdx, float x)
   float knStart = ocio_grading_huecurve_knots[knotsOffs];
   float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
   float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
-  // Match the upstream CPU HueFX lower periodic bound.
+  // Match the CPU HueFX lower periodic bound.
   knStartY = (curveIdx == 7) ? knStartY + knStart : knStartY;
   float knEndY;
   {
@@ -6380,7 +6377,6 @@ float4 grading_transform(float4 inPixel)
       float satLumGain = max(0., ocio_grading_huecurve_evalBSplineCurve(6, outColor.g, 1.));
       
       hueLumGain = 1. - (1. - hueLumGain) * min( 1., outColor.g );
-      // Match the upstream CPU video luminance operation.
       outColor.b = outColor.b - (hueLumGain + satLumGain - 2.) * 0.1;
       
       outColor.b = ocio_grading_huecurve_evalBSplineCurveRev(5, outColor.b);

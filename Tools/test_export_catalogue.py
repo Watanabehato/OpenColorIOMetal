@@ -1,11 +1,13 @@
 """Development oracle tests; run using the pinned OCIO Python build in CI."""
 from pathlib import Path
+import importlib.util
 import tempfile
 import unittest
 
 import numpy as np
 import PyOpenColorIO as ocio
 from export_catalogue import Exporter
+from gpu_corrections import correct_hue_shader
 
 
 class ExportTests(unittest.TestCase):
@@ -77,6 +79,65 @@ class ExportTests(unittest.TestCase):
         source = (self.root / definition["shader"]).read_text()
         self.assertIn("address::clamp_to_edge", source)
         self.assertIn("baseInd.zyx", source)
+
+    def hue_source(self, space, inverse=False, dynamic=False):
+        config = ocio.Config.CreateFromFile(str(Path(__file__).parent / "Fixtures/hue-regression.ocio"))
+        transform = config.getColorSpace(space).getTransform(ocio.COLORSPACE_DIR_TO_REFERENCE)
+        if inverse:
+            transform.setDirection(ocio.TRANSFORM_DIR_INVERSE)
+        if dynamic:
+            transform.makeDynamic()
+        desc = ocio.GpuShaderDesc.CreateShaderDesc()
+        desc.setLanguage(ocio.GPU_LANGUAGE_MSL_2_0)
+        desc.setResourcePrefix("arbitraryPrefix123_")
+        config.getProcessor(transform).getDefaultGPUProcessor().extractGpuShaderInfo(desc)
+        return desc.getShaderText()
+
+    def test_hue_video_corrections_cover_static_dynamic_and_hsy_bypass(self):
+        for space in ("Video", "VideoHSY"):
+            for inverse in (False, True):
+                for dynamic in (False, True):
+                    with self.subTest(space=space, inverse=inverse, dynamic=dynamic):
+                        source = self.hue_source(space, inverse, dynamic)
+                        corrected = correct_hue_shader(source)
+                        operator = "-" if inverse else "+"
+                        self.assertIn(f"outColor.b = outColor.b {operator} (hueLumGain + satLumGain - 2.) * 0.1;", corrected)
+                        self.assertNotIn("outColor.b * hueLumGain * satLumGain", corrected)
+                        self.assertNotIn("outColor.b / max(0.01, hueLumGain * satLumGain)", corrected)
+                        self.assertEqual(corrected, correct_hue_shader(corrected))
+                        self.assertIn("arbitraryPrefix123_", corrected)
+
+    def test_hue_lower_periodic_bound_matches_cpu_for_static_and_dynamic(self):
+        for space in ("Log", "LogHSY", "LinearCurves", "Video", "VideoHSY"):
+            for dynamic in (False, True):
+                with self.subTest(space=space, dynamic=dynamic):
+                    corrected = correct_hue_shader(self.hue_source(space, inverse=True, dynamic=dynamic))
+                    self.assertEqual(corrected.count("knStartY = (curveIdx == 7) ? knStartY + knStart : knStartY;"), 1)
+                    self.assertEqual(corrected, correct_hue_shader(corrected))
+
+    def test_hue_forward_linear_and_log_are_unchanged(self):
+        for space in ("LinearCurves", "Log", "LogHSY"):
+            for dynamic in (False, True):
+                source = self.hue_source(space, dynamic=dynamic)
+                self.assertEqual(source, correct_hue_shader(source))
+
+    def test_hue_mixed_style_operations_are_corrected_independently(self):
+        source = self.hue_source("Composite")
+        corrected = correct_hue_shader(source)
+        self.assertEqual(corrected.count("outColor.b = outColor.b * hueLumGain * satLumGain;"), 1)
+        self.assertEqual(corrected.count("outColor.b = outColor.b + (hueLumGain + satLumGain - 2.) * 0.1;"), 2)
+        corrected_inverse = correct_hue_shader(self.hue_source("Composite", inverse=True))
+        self.assertEqual(corrected_inverse.count("knStartY = (curveIdx == 7) ? knStartY + knStart : knStartY;"), 3)
+
+    def test_custom_hue_archive_has_independently_audited_cpu_cases(self):
+        path = Path(__file__).parent / "generate-export-reference.py"
+        spec = importlib.util.spec_from_file_location("export_reference", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        result = module.generate(self.root, {"repository": "test", "commit": "test", "version": ocio.__version__})
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["pairs"], 64)
+        self.assertEqual(result["validationCases"], 80)
 
 
 if __name__ == "__main__":

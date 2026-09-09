@@ -11,6 +11,7 @@ import re
 import math
 import random
 import PyOpenColorIO as ocio
+from gpu_corrections import correct_hue_shader
 
 MARKER = "// BEGIN GENERATED GRADING MSL TEMPLATES"
 
@@ -38,37 +39,6 @@ def shader_descriptor(transform):
     return desc
 
 
-def match_hue_cpu_semantics(source, style_name, direction_name, variant):
-    """Correct two upstream GPU/CPU discrepancies verified by native Metal tests.
-
-    GradingHueCurveOpCPU.cpp applies additive luminance changes for video and log;
-    the GPU emitter uses the log branch only. GradingBSplineCurve::evalCurveRevHue
-    shifts both first/last y knots for HueFX; AddShaderEvalRevHue shifts only last.
-    These corrections preserve the canonical CPU conversion without relaxation
-    of the GPU numerical validation tolerances.
-    """
-    if style_name == "video" and ".draw" not in variant:
-        before = ("outColor.b = outColor.b * hueLumGain * satLumGain;" if direction_name == "forward" else
-                  "outColor.b = outColor.b / max(0.01, hueLumGain * satLumGain);")
-        after = ("outColor.b = outColor.b + (hueLumGain + satLumGain - 2.) * 0.1;" if direction_name == "forward" else
-                 "outColor.b = outColor.b - (hueLumGain + satLumGain - 2.) * 0.1;")
-        if before in source:
-            source = source.replace(before, "// Match the upstream CPU video luminance operation.\n      " + after)
-        elif after not in source:
-            raise RuntimeError("Unrecognized upstream hue video luminance shader")
-    function = "float ocio_grading_huecurve_evalBSplineCurveRevHue("
-    if function in source:
-        prefix, suffix = source.split(function, 1)
-        correction = "knStartY = (curveIdx == 7) ? knStartY + knStart : knStartY;"
-        if correction not in suffix:
-            anchor = "float knEndY;"
-            if anchor not in suffix:
-                raise RuntimeError("Unrecognized upstream inverse hue knot shader")
-            suffix = suffix.replace(anchor, "// Match the upstream CPU HueFX lower periodic bound.\n  " + correction + "\n  " + anchor, 1)
-        source = prefix + function + suffix
-    return source
-
-
 def generate_templates():
     templates = {}
     classes = {"primary": ocio.GradingPrimaryTransform, "tone": ocio.GradingToneTransform,
@@ -92,7 +62,7 @@ def generate_templates():
                     desc = shader_descriptor(transform)
                     source = desc.getShaderText()
                     if kind == "hue":
-                        source = match_hue_cpu_semantics(source, style_name, direction_name, variant)
+                        source = correct_hue_shader(source)
                     names = [name for name, _ in desc.getUniforms()]
                     lengths = []
                     for name in names:

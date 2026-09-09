@@ -27,6 +27,9 @@ public enum CTFFile {
             case "LUT1D", "LUT3D", "InvLUT1D", "InvLUT3D":
                 let reversed = node.name.hasPrefix("Inv")
                 let lut = try lookup(node, outputScale: reversed ? inputScale : outputScale)
+                if let indexMap = try indexMap(node, inputScale: inputScale, size: lut.size) {
+                    operations.append(.transform(indexMap))
+                }
                 operations.append(.configuredLUT(lut, interpolation: node.attributes["interpolation"] ?? "linear", inverse: reversed))
             case "Reference":
                 guard node.attributes["alias"] == nil else { throw OCIOConfigError.unavailableTransform("CTF Reference aliases require an alias resolver") }
@@ -208,19 +211,31 @@ public enum CTFFile {
         return try transform("FixedFunctionTransform", fields: fields, inverse: selected.1)
     }
     static func lookup(_ node: NativeXMLNode, outputScale: Double) throws -> OCIONativeLUT {
-        guard !node.children.contains(where: { $0.name == "IndexMap" }) else { throw OCIOConfigError.unavailableTransform("native CLF IndexMap execution is pending") }
-        guard node.attributes["halfDomain"]?.lowercased() != "true", node.attributes["rawHalfs"]?.lowercased() != "true", node.attributes["hueAdjust"] == nil else {
-            throw OCIOConfigError.unavailableTransform("native half-domain/raw-half/hue-adjusted CLF LUT execution is pending")
+        func flag(_ name: String) throws -> Bool {
+            guard let text = node.attributes[name] else { return false }
+            guard ["true", "false"].contains(text.lowercased()) else { throw error(node, "invalid '\(name)' flag") }
+            return text.lowercased() == "true"
         }
+        let halfDomain = try flag("halfDomain"), rawHalfs = try flag("rawHalfs")
+        let hueAdjust = node.attributes["hueAdjust"] != nil
+        if let hue = node.attributes["hueAdjust"], hue.lowercased() != "dw3" { throw error(node, "unknown hueAdjust style") }
         let array = try array(node)
         let dimension = node.name.hasSuffix("1D") ? 1 : 3
+        guard dimension == 1 || (!halfDomain && !rawHalfs && !hueAdjust) else { throw error(node, "halfDomain, rawHalfs and hueAdjust are only valid for 1D LUTs") }
         let size = array.dimensions[0]
         guard size >= 2, size <= (dimension == 1 ? 1_048_576 : 129) else { throw error(node, "LUT size out of bounds") }
         let components = array.dimensions.last!
         if dimension == 1 {
             guard array.dimensions.count == 2, [1, 3].contains(components), array.values.count == size * components else { throw error(node, "invalid 1D Array shape") }
-            let values = array.values.flatMap { components == 1 ? [$0, $0, $0] : [$0] }.map { Float($0 / outputScale) }
-            return try OCIOLUTFile.lut(dimension: 1, size: size, values: values)
+            let decoded: [Float] = try array.values.map { value in
+                if rawHalfs {
+                    guard value >= 0, value <= 65535, value.rounded(.towardZero) == value else { throw error(node, "rawHalfs value must be a UInt16 bit pattern") }
+                    return Float(Float16(bitPattern: UInt16(value))) / Float(outputScale)
+                }
+                return Float(value / outputScale)
+            }
+            let values = decoded.flatMap { components == 1 ? [$0, $0, $0] : [$0] }
+            return try OCIOLUTFile.lut(dimension: 1, size: size, values: values, halfDomain: halfDomain, hueAdjust: hueAdjust)
         }
         guard array.dimensions == [size, size, size, 3], array.values.count == size * size * size * 3 else { throw error(node, "invalid 3D Array shape") }
         // CLF Array is blue-fast; Metal x coordinates address red.
@@ -231,5 +246,21 @@ public enum CTFFile {
             for component in 0..<3 { values[destination + component] = Float(array.values[source + component] / outputScale) }
         } } }
         return try OCIOLUTFile.lut(dimension: 3, size: size, values: values)
+    }
+
+    static func indexMap(_ node: NativeXMLNode, inputScale: Double, size: Int) throws -> OCIOConfigTransform? {
+        let maps = node.children.filter { $0.name == "IndexMap" }
+        guard maps.count <= 1 else { throw error(node, "only one IndexMap is allowed per LUT") }
+        guard let map = maps.first else { return nil }
+        guard map.attributes["dim"] == "2", !node.name.hasPrefix("Inv") else { throw error(node, "OCIO supports a two-entry IndexMap on forward LUTs") }
+        // Permit whitespace on either side of '@', as the upstream XML reader does.
+        let tokens = map.text.replacingOccurrences(of: "@", with: " @ ").split(whereSeparator: \.isWhitespace).map(String.init)
+        guard tokens.count == 6, tokens[1] == "@", tokens[4] == "@" else { throw error(node, "IndexMap requires two input@index pairs") }
+        let pairs = try OCIOLUTFile.numbers([tokens[0], tokens[2], tokens[3], tokens[5]])
+        guard pairs[2] > pairs[0], pairs[3] > pairs[1] else { throw error(node, "IndexMap values must increase") }
+        return try transform("RangeTransform", fields: [
+            "min_in_value": .scalar(String(pairs[0] / inputScale)), "max_in_value": .scalar(String(pairs[2] / inputScale)),
+            "min_out_value": .scalar(String(pairs[1] / Double(size - 1))), "max_out_value": .scalar(String(pairs[3] / Double(size - 1)))
+        ])
     }
 }
