@@ -1,5 +1,13 @@
 // swift-tools-version: 6.0
 import PackageDescription
+import Foundation
+
+let sourceRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Sources")
+let nativeSources = ["OpenColorIOMetal", "OpenColorIOConfig"].flatMap { directory -> [String] in
+    let root = sourceRoot.appendingPathComponent(directory)
+    let files = FileManager.default.enumerator(atPath: root.path)?.allObjects as? [String] ?? []
+    return files.filter { $0.hasSuffix(".swift") }.map { "\(directory)/\($0)" }
+}.sorted()
 
 let package = Package(
     name: "OpenColorIOMetal",
@@ -11,7 +19,7 @@ let package = Package(
     targets: [
         .target(name: "OpenColorIOMetal", path: "Sources",
                 exclude: ["OCIOCLI"],
-                sources: ["OpenColorIOMetal", "OpenColorIOConfig"],
+                sources: nativeSources,
                 resources: [.copy("OpenColorIOMetal/Resources/Catalogue")],
                 linkerSettings: [.linkedFramework("Metal"), .linkedFramework("Foundation")]),
         .executableTarget(name: "OCIOCLI", dependencies: ["OpenColorIOMetal"], path: "Sources/OCIOCLI"),

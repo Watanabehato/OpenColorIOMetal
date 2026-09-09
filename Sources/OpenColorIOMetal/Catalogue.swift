@@ -69,6 +69,26 @@ public struct OCIOConfiguration: Codable, Sendable {
     public let colorSpaces: [OCIOColorSpace]
     public let conversions: [OCIOConversion]
     public let displayViews: [OCIODisplayView]
+    public let namedTransforms: [OCIONamedTransform]
+    public let looks: [OCIOLook]
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, description, isRecommended, roleAliases, colorSpaces, conversions, displayViews, namedTransforms, looks
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
+        name = try values.decode(String.self, forKey: .name)
+        description = try values.decode(String.self, forKey: .description)
+        isRecommended = try values.decode(Bool.self, forKey: .isRecommended)
+        roleAliases = try values.decode([String: String].self, forKey: .roleAliases)
+        colorSpaces = try values.decode([OCIOColorSpace].self, forKey: .colorSpaces)
+        conversions = try values.decode([OCIOConversion].self, forKey: .conversions)
+        displayViews = try values.decode([OCIODisplayView].self, forKey: .displayViews)
+        namedTransforms = try values.decodeIfPresent([OCIONamedTransform].self, forKey: .namedTransforms) ?? []
+        looks = try values.decodeIfPresent([OCIOLook].self, forKey: .looks) ?? []
+    }
 
     /// Resolves names, aliases and roles using OpenColorIO's case-insensitive matching.
     public func colorSpace(named name: String) throws -> OCIOColorSpace {
@@ -91,6 +111,22 @@ public struct OCIOConfiguration: Codable, Sendable {
         }) { return conversion }
         throw OCIOError.unsupportedConversion("\(id): \(sourceSpace.name) → \(destinationSpace.name)")
     }
+}
+
+public struct OCIONamedTransform: Codable, Sendable {
+    public let name: String
+    public let description: String
+    public let aliases: [String]
+    public let forward: [String]
+    public let inverse: [String]
+}
+
+public struct OCIOLook: Codable, Sendable {
+    public let name: String
+    public let description: String
+    public let processSpace: String
+    public let forward: [String]
+    public let inverse: [String]
 }
 
 public struct OCIOBuiltin: Codable, Sendable {
@@ -294,6 +330,17 @@ public struct OCIOCatalogue: Sendable {
                     throw OCIOError.invalidArchive("view references missing color space \(view.source)")
                 }
                 try checkPipeline(view.pipeline)
+            }
+            for named in configuration.namedTransforms {
+                try checkPipeline(named.forward)
+                try checkPipeline(named.inverse)
+            }
+            for look in configuration.looks {
+                guard spaces.contains(look.processSpace) else {
+                    throw OCIOError.invalidArchive("look references missing process space \(look.processSpace)")
+                }
+                try checkPipeline(look.forward)
+                try checkPipeline(look.inverse)
             }
         }
         for builtin in builtins {

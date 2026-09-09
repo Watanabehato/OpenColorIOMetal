@@ -79,6 +79,26 @@ public final class MetalColorEngine: @unchecked Sendable {
         return try processor(transformIDs: direction == .forward ? builtin.forward : builtin.inverse)
     }
 
+    public func namedTransformProcessor(configuration: String? = nil, name: String,
+                                        direction: TransformDirection = .forward) throws -> ColorProcessor {
+        let config = try catalogue.configuration(configuration)
+        guard let named = config.namedTransforms.first(where: {
+            $0.name.caseInsensitiveCompare(name) == .orderedSame ||
+            $0.aliases.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame })
+        }) else { throw OCIOError.unknownTransform(name) }
+        return try processor(transformIDs: direction == .forward ? named.forward : named.inverse)
+    }
+
+    /// The input/output RGB values are expressed in the look's declared process space.
+    public func lookProcessor(configuration: String? = nil, name: String,
+                              direction: TransformDirection = .forward) throws -> ColorProcessor {
+        let config = try catalogue.configuration(configuration)
+        guard let look = config.looks.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else {
+            throw OCIOError.unknownTransform(name)
+        }
+        return try processor(transformIDs: direction == .forward ? look.forward : look.inverse)
+    }
+
     public func processor(transformIDs: [String]) throws -> ColorProcessor {
         let stages = try transformIDs.map { try compiledTransform($0) }
         return ColorProcessor(device: device, queue: queue, stages: stages, transformIDs: transformIDs)

@@ -225,7 +225,8 @@ private struct YAMLDocumentParser {
         } else if text.hasPrefix("|") || text.hasPrefix(">") {
             result = .scalar(try blockScalar(header: text, parentIndent: parentIndent, line: line))
         } else {
-            while !flowComplete(text) {
+            let startsFlowOrQuote = ["[", "{", "\"", "'"].contains(String(text.prefix(1)))
+            while startsFlowOrQuote && !flowComplete(text) {
                 guard index < lines.count else { throw error("unterminated flow collection or quoted scalar", at: line) }
                 text += "\n" + lines[index].significant
                 index += 1

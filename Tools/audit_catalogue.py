@@ -83,6 +83,12 @@ def audit(root, require_release=True, compare_registry=False):
             check(view["source"] in names, "View references unknown input")
             check(view["direction"] in ("forward", "inverse"), "Invalid view direction")
             add_case(f"display|{identifier}|{view['source']}|{view['display']}|{view['view']}|{view['direction']}", view["pipeline"])
+        for field, prefix in (("namedTransforms", "named"), ("looks", "look")):
+            for operation in config.get(field, []):
+                if field == "looks":
+                    check(operation["processSpace"] in names, "Look process space missing")
+                for direction in ("forward", "inverse"):
+                    add_case(f"{prefix}|{identifier}|{operation['name']}|{direction}", operation[direction])
     check(manifest["defaultConfiguration"] in configurations, "Missing default config")
     for builtin in manifest["builtins"]:
         for direction in ("forward", "inverse"):
@@ -117,6 +123,10 @@ def audit(root, require_release=True, compare_registry=False):
                 expected_views.update(itertools.product(spaces, [display], views, ["forward", "inverse"]))
             actual_views = {(v["source"], v["display"], v["view"], v["direction"]) for v in configurations[identifier]["displayViews"]}
             check(actual_views == expected_views, f"Display/view registry mismatch {identifier}")
+            check({t["name"] for t in configurations[identifier].get("namedTransforms", [])} ==
+                  set(config.getNamedTransformNames(ocio.NAMEDTRANSFORM_ALL)), f"Named-transform registry mismatch {identifier}")
+            check({t["name"] for t in configurations[identifier].get("looks", [])} ==
+                  {look.getName() for look in config.getLooks()}, f"Look registry mismatch {identifier}")
     return {"passed": True, "configurations": len(configurations), "pairs": total_pairs,
             "validationCases": len(seen_cases), "transforms": len(definitions), "filesVerified": len(checked_files),
             "metalExecutionVerified": False}

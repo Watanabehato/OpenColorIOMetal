@@ -109,9 +109,19 @@ final class ConfigurationTests: XCTestCase {
         let fixtureDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures", isDirectory: true)
         let fixtures = try FileManager.default.contentsOfDirectory(at: fixtureDirectory, includingPropertiesForKeys: nil).filter { $0.pathExtension == "ocio" }
         XCTAssertEqual(fixtures.count, 8)
+        let expectedCounts = [
+            "cg-config-v1.0.0_aces-v1.3_ocio-v2.1.ocio": 20,
+            "cg-config-v2.1.0_aces-v1.3_ocio-v2.3.ocio": 22,
+            "cg-config-v2.2.0_aces-v1.3_ocio-v2.4.ocio": 25,
+            "cg-config-v4.0.0_aces-v2.0_ocio-v2.5.ocio": 27,
+            "studio-config-v1.0.0_aces-v1.3_ocio-v2.1.ocio": 49,
+            "studio-config-v2.1.0_aces-v1.3_ocio-v2.3.ocio": 52,
+            "studio-config-v2.2.0_aces-v1.3_ocio-v2.4.ocio": 56,
+            "studio-config-v4.0.0_aces-v2.0_ocio-v2.5.ocio": 57
+        ]
         for fixture in fixtures {
             let config = try OCIOConfigDocument(contentsOf: fixture, environment: [:])
-            XCTAssertFalse(config.colorSpaces.isEmpty, fixture.lastPathComponent)
+            XCTAssertEqual(config.colorSpaces.count, expectedCounts[fixture.lastPathComponent], fixture.lastPathComponent)
             XCTAssertFalse(config.displays.isEmpty, fixture.lastPathComponent)
             for source in config.colorSpaces {
                 XCTAssertEqual(try config.colorSpace(named: source.name), source)

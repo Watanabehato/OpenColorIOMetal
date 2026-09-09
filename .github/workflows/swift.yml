@@ -1,0 +1,27 @@
+name: Swift 6 native development checks
+on:
+  push:
+    branches: ['codex/**', main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+concurrency:
+  group: swift-only-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile Swift 6 API and test native configuration processing
+        run: swift test --filter 'YAMLTests|ConfigurationTests|Native|Grading' 2>&1 | tee swift-tests.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: swift-native-tests
+          path: swift-tests.log

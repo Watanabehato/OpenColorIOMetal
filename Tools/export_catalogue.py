@@ -107,7 +107,8 @@ class Exporter:
         self.processor_cache = {}
         self.inputs = validation_input(np)
         self.cases, self.failures = [], []
-        self.counts = {"pairs": 0, "displayViewDirections": 0, "builtinDirections": 0}
+        self.counts = {"pairs": 0, "displayViewDirections": 0, "builtinDirections": 0,
+                       "namedTransformDirections": 0, "lookDirections": 0}
 
     def texture(self, texture, dimension, binding_index):
         ocio = self.ocio
@@ -228,9 +229,34 @@ class Exporter:
                                                   "direction": direction, "pipeline": pipeline})
         print(f"{config_id}: {len(spaces)} spaces, {len(pairs)}/{len(names)**2} pairs, "
               f"{len(display_views)} display/view directions", flush=True)
+        named, looks = self.config_operations(config_id, config)
         return {"id": config_id, "name": ui_name, "description": config.getDescription(),
-                "isRecommended": recommended, "roleAliases": dict(config.getRoles()),
-                "colorSpaces": metadata, "conversions": pairs, "displayViews": display_views}
+                "isRecommended": recommended,
+                "roleAliases": {role: config.getCanonicalName(space) for role, space in config.getRoles()},
+                "colorSpaces": metadata, "conversions": pairs, "displayViews": display_views,
+                "namedTransforms": named, "looks": looks}
+
+    def config_operations(self, config_id, config):
+        ocio = self.ocio
+        named, looks = [], []
+        for transform in config.getNamedTransforms(ocio.NAMEDTRANSFORM_ALL):
+            definition = {"name": transform.getName(), "description": transform.getDescription(),
+                          "aliases": list(transform.getAliases())}
+            for direction, enum in (("forward", ocio.TRANSFORM_DIR_FORWARD), ("inverse", ocio.TRANSFORM_DIR_INVERSE)):
+                definition[direction] = self.capture(f"named|{config_id}|{transform.getName()}|{direction}",
+                    "namedTransformDirections", lambda: config.getProcessor(transform, enum))
+            if definition["forward"] is not None and definition["inverse"] is not None:
+                named.append(definition)
+        for look in config.getLooks():
+            process_space = config.getCanonicalName(look.getProcessSpace())
+            definition = {"name": look.getName(), "description": look.getDescription(), "processSpace": process_space}
+            transform = ocio.LookTransform(src=process_space, dst=process_space, looks=look.getName())
+            for direction, enum in (("forward", ocio.TRANSFORM_DIR_FORWARD), ("inverse", ocio.TRANSFORM_DIR_INVERSE)):
+                definition[direction] = self.capture(f"look|{config_id}|{look.getName()}|{direction}",
+                    "lookDirections", lambda: config.getProcessor(transform, enum))
+            if definition["forward"] is not None and definition["inverse"] is not None:
+                looks.append(definition)
+        return named, looks
 
 
 def main():
@@ -240,7 +266,7 @@ def main():
     parser.add_argument("--upstream-sha", required=True)
     parser.add_argument("--oracle-build-root", type=Path)
     parser.add_argument("--allow-unpinned-oracle", action="store_true", help="Development probe only; releaseEligible is false")
-    parser.add_argument("--config", action="append", default=[], help="Additional custom .ocio files; built-in configs are always exported")
+    parser.add_argument("--config", action="append", default=[], type=Path, help="Additional custom .ocio files; built-in configs are always exported")
     args = parser.parse_args()
     import numpy as np
     import PyOpenColorIO as ocio
@@ -281,7 +307,7 @@ def main():
                 "expected": exporter.counts, "validationCaseCount": len(exporter.cases),
                 "uniqueTransformCount": len(exporter.transforms),
                 "elapsedSeconds": round(time.monotonic() - started, 3),
-                "scope": "All registry built-in configs, active/inactive scene/display/data spaces; every ordered pair; all display/view directions; every built-in transform direction",
+                "scope": "All registry built-in configs, active/inactive scene/display/data spaces; every ordered pair; all display/view directions; every built-in/named transform and look direction",
                 "metalExecutionVerified": False}
     write_json(output / "manifest.json", manifest)
     write_json(output / "validation.json", validation)
