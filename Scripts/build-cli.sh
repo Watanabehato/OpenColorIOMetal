@@ -8,7 +8,7 @@ for arch in arm64 x86_64; do
   mkdir -p "build/cli/$arch"
   xcrun swiftc -swift-version 6 -parse-as-library -Onone -g \
     -sdk "$sdk" -target "$arch-apple-macosx13.0" \
-    -F dist/Release -framework OpenColorIOMetal -framework Metal -framework Foundation \
+    -F dist/Debug -framework OpenColorIOMetal -framework Metal -framework Foundation \
     "${cli_sources[@]}" -o "build/cli/$arch/ocio-metal"
 done
 xcrun lipo -create build/cli/arm64/ocio-metal build/cli/x86_64/ocio-metal -output dist/Debug/ocio-metal

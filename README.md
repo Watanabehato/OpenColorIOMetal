@@ -17,7 +17,8 @@ OpenColorIO 动态库或 Python 运行依赖。开发工具通过固定版本的
 产物 `OpenColorIOMetal-macOS-universal` 包含：
 
 - `Release/OpenColorIOMetal.framework`：默认静态库，arm64 + x86_64，最低 macOS 13。
-- `Debug/ocio-metal` 和 `.dSYM`：通用架构 Debug CLI。
+- `Debug/ocio-metal` 和 `.dSYM`：通用架构 Debug CLI，包含未优化的 Debug 运行库。
+- `Debug/OpenColorIOMetal.framework`：对应的未优化静态 Framework，便于单步调试。
 - `Debug/Catalogue`：色彩配置、Metal 着色器、LUT 和数值验证数据。
 - 覆盖、Metal 编译和可用时的 GPU 数值对照报告。
 
@@ -57,7 +58,8 @@ let pixels = try processor.processRGBA([0.18, 0.18, 0.18, 1])
 `ColorProcessor` 也支持应用已有 Metal command buffer 的异步编码。
 源/目标空间不能仅凭名称跨配置等同；转换必须选择同一份配置。
 
-本地开发可运行 `swift test`、`bash Scripts/build-framework.sh`、`bash Scripts/build-cli.sh`；
+本地开发可运行 `swift test`、`bash Scripts/build-framework.sh`、
+`CONFIGURATION=Debug bash Scripts/build-framework.sh`、`bash Scripts/build-cli.sh`；
 先下载 CI 的 `native-metal-catalogue` 到 `Sources/OpenColorIOMetal/Resources/Catalogue`。
 直接构建 Framework 可设置 `FRAMEWORK_LINKAGE=dynamic`；发布和 CI 默认保持静态。
 

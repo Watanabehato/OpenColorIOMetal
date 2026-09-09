@@ -105,7 +105,9 @@ jobs:
       - name: Compile every unique Metal shader
         run: python3 Scripts/check-metal.py Sources/OpenColorIOMetal/Resources/Catalogue
       - name: Build default static universal macOS framework
-        run: bash Scripts/build-framework.sh
+        run: |
+          bash Scripts/build-framework.sh
+          CONFIGURATION=Debug bash Scripts/build-framework.sh
       - name: Build universal Debug CLI and verify framework consumer
         run: bash Scripts/build-cli.sh
       - name: Validate archive coverage
