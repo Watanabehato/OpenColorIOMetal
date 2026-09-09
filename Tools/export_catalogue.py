@@ -118,7 +118,8 @@ class Exporter:
             width, height, depth = texture.width, texture.height, 1
             channels = 1 if texture.channel == ocio.GpuShaderDesc.TEXTURE_RED_CHANNEL else 3
         # Values returned by the GPU descriptor are already in GPU storage order:
-        # x/red fastest, then y/green, then z/blue. Do not transpose 3D samples.
+        # x/blue fastest, then y/green, then z/red. The generated MSL samples
+        # with .zyx coordinates. Do not transpose samples or remove that swizzle.
         values = self.np.asarray(texture.getValues(), dtype="<f4").reshape(-1)
         if values.size != width * height * depth * channels:
             raise RuntimeError("LUT size disagrees with upstream texture descriptor")
@@ -182,13 +183,18 @@ class Exporter:
             return pipeline
         except Exception as error:
             self.failures.append({"name": name, "kind": kind, "error": str(error)})
-            print(f"FAILED {name}: {error}", file=sys.stderr, flush=True)
+            if len(self.failures) <= 10:
+                print(f"FAILED {name}: {error}", file=sys.stderr, flush=True)
             return None
 
     def configuration(self, config_id, ui_name, recommended, configuration=None):
         ocio = self.ocio
         config = configuration or ocio.Config.CreateFromBuiltinConfig(config_id)
         config.validate()
+        # Config normally retains every requested processor and its large ACES
+        # lookup tables. Exhaustive enumeration must not retain O(N^2) native
+        # processors; our small digest cache already deduplicates shader export.
+        config.setProcessorCacheFlags(ocio.PROCESSOR_CACHE_OFF)
         active = set(config.getColorSpaceNames())
         spaces = list(config.getColorSpaces(ocio.SEARCH_REFERENCE_SPACE_ALL, ocio.COLORSPACE_ALL))
         metadata = []
@@ -252,6 +258,7 @@ def main():
     for path in args.config:
         configurations.append(exporter.configuration(str(path), path.stem, False, ocio.Config.CreateFromFile(str(path.resolve()))))
     raw = ocio.Config.CreateRaw()
+    raw.setProcessorCacheFlags(ocio.PROCESSOR_CACHE_OFF)
     builtins = []
     for name, description in ocio.BuiltinTransformRegistry().getBuiltins():
         definition = {"name": name, "description": description}
@@ -279,7 +286,7 @@ def main():
     write_json(output / "manifest.json", manifest)
     write_json(output / "validation.json", validation)
     write_json(output / "coverage.json", coverage)
-    print(canonical_json(coverage), flush=True)
+    print(canonical_json({key: value for key, value in coverage.items() if key != "failures"}), flush=True)
     if exporter.failures:
         return 1
     return 0

@@ -189,6 +189,18 @@ public struct OCIOCatalogue: Sendable {
                 }
             }
         }
+        if let executable = Bundle.main.executableURL {
+            let directory = executable.deletingLastPathComponent()
+            let candidates = [
+                directory.appendingPathComponent("Catalogue"),
+                directory.appendingPathComponent("OpenColorIOMetal_Catalogue.bundle/Catalogue"),
+                directory.appendingPathComponent("OpenColorIOMetal.framework/Resources/Catalogue"),
+                directory.deletingLastPathComponent().appendingPathComponent("Frameworks/OpenColorIOMetal.framework/Resources/Catalogue")
+            ]
+            for root in candidates where FileManager.default.fileExists(atPath: root.appendingPathComponent("manifest.json").path) {
+                return try OCIOCatalogue(contentsOf: root)
+            }
+        }
         throw OCIOError.missingResource("Catalogue/manifest.json; pass an explicit archive URL or copy the resource bundle into your app")
     }
 

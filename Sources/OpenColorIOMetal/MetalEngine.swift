@@ -345,7 +345,8 @@ public final class ColorProcessor: @unchecked Sendable {
 
     private func validate(commandBuffer: any MTLCommandBuffer) throws {
         guard commandBuffer.device.registryID == device.registryID,
-              commandBuffer.status == .notEnqueued, commandBuffer.retainedReferences else {
+              commandBuffer.status == .notEnqueued || commandBuffer.status == .enqueued,
+              commandBuffer.retainedReferences else {
             throw OCIOError.invalidInput("command buffer must be uncommitted, retain references, and belong to this Metal device")
         }
     }

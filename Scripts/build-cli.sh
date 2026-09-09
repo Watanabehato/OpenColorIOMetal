@@ -13,7 +13,7 @@ for arch in arm64 x86_64; do
 done
 xcrun lipo -create build/cli/arm64/ocio-metal build/cli/x86_64/ocio-metal -output dist/Debug/ocio-metal
 xcrun dsymutil dist/Debug/ocio-metal -o dist/Debug/ocio-metal.dSYM
-cp -R Sources/OpenColorIOMetal/Resources/Catalogue dist/Debug/Catalogue
+cp -R Sources/OpenColorIOMetal/Resources/Catalogue dist/Debug/
 dist/Debug/ocio-metal info --archive dist/Debug/Catalogue
 # A consumer links against the packaged framework and its public Swift interface.
 cat > build/cli/consumer.swift <<'SWIFT'

@@ -47,6 +47,8 @@ for arch in "${architectures[@]}"; do
 done
 xcrun lipo -create "${binaries[@]}" -output "$version/OpenColorIOMetal"
 cp -R Sources/OpenColorIOMetal/Resources/Catalogue "$version/Resources/"
+mkdir -p "dist/$configuration/OpenColorIOMetal_Catalogue.bundle"
+cp -R Sources/OpenColorIOMetal/Resources/Catalogue "dist/$configuration/OpenColorIOMetal_Catalogue.bundle/"
 cp LICENSE UPSTREAM.json "$version/Resources/"
 cat > "$version/Resources/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>

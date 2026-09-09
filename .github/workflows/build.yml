@@ -23,6 +23,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install development-only numerical reference dependency
+        run: python3 -m pip install numpy==2.2.6
       - uses: actions/cache@v4
         id: oracle-cache
         with:
@@ -42,6 +44,8 @@ jobs:
             --output Sources/OpenColorIOMetal/Resources/Catalogue \
             --upstream-sha "$(python3 -c 'import json; print(json.load(open("UPSTREAM.json"))["commit"])')" \
             --upstream-source build/upstream --oracle-build-root build/oracle
+          python3 -m unittest discover -s Tools -p 'test_*.py' -v
+          python3 Tools/audit_catalogue.py Sources/OpenColorIOMetal/Resources/Catalogue --compare-registry
       - uses: actions/upload-artifact@v4
         with:
           name: native-metal-catalogue
