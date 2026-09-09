@@ -624,12 +624,34 @@ extension OCIONativeCompiler {
         case "aces2_rgb_to_jmh":
             try count(8)
             return try fixedACES2RGBToJMh(params, inverse: inverse, owner: owner)
-        case "aces2_outputtransform", "aces2_tonescalecompress", "aces2_gamutcompress":
-            try count(style == "aces2_tonescalecompress" ? 1 : 9)
+        case "aces2_tonescalecompress":
+            try count(1)
             guard (1...10000).contains(params[0]), params[0].rounded(.down) == params[0] else {
                 throw owner.error("ACES 2 peak luminance must be an integer in [1, 10000]")
             }
-            throw OCIOConfigError.unavailableTransform("arbitrary \(style) parameters require the ACES 2 gamut-table generator; registered configurations and builtin output transforms use exact archived Metal shaders")
+            return try fixedACES2ToneScale(peak: Float(params[0]), inverse: inverse)
+        case "aces2_outputtransform", "aces2_gamutcompress":
+            try count(9)
+            guard (1...10000).contains(params[0]), params[0].rounded(.down) == params[0] else {
+                throw owner.error("ACES 2 peak luminance must be an integer in [1, 10000]")
+            }
+            if style == "aces2_gamutcompress" {
+                return try fixedACES2Gamut(peak: Float(params[0]), primaries: Array(params[1...]), inverse: inverse)
+            }
+            let ap0 = [0.7347, 0.2653, 0, 1, 0.0001, -0.077, 0.32168, 0.33767]
+            let primaries = Array(params[1...])
+            if inverse {
+                let toJMh = try fixedACES2RGBToJMh(primaries, inverse: false, owner: owner)
+                let gamut = try fixedACES2Gamut(peak: Float(params[0]), primaries: primaries, inverse: true)
+                let tone = try fixedACES2ToneScale(peak: Float(params[0]), inverse: true)
+                let toRGB = try fixedACES2RGBToJMh(ap0, inverse: true, owner: owner, roundPrimaries: false)
+                return [toJMh, gamut, tone, toRGB].joined(separator: "\n")
+            }
+            let toJMh = try fixedACES2RGBToJMh(ap0, inverse: false, owner: owner, roundPrimaries: false)
+            let tone = try fixedACES2ToneScale(peak: Float(params[0]), inverse: false)
+            let gamut = try fixedACES2Gamut(peak: Float(params[0]), primaries: primaries, inverse: false)
+            let toRGB = try fixedACES2RGBToJMh(primaries, inverse: true, owner: owner)
+            return [toJMh, tone, gamut, toRGB].joined(separator: "\n")
         default:
             throw OCIOConfigError.unavailableTransform("FixedFunctionTransform style '\(style)' is unknown or unimplemented by upstream")
         }
@@ -639,7 +661,7 @@ extension OCIONativeCompiler {
         let slope = p[6] / log(p[5])
         let mirror = inverse ? p[3] * pow(p[0] + p[4], p[2]) : p[0]
         let breakpoint = inverse ? p[3] * pow(p[1] + p[4], p[2]) : p[1]
-        var body = "{ float3 mirrorin = pixel.rgb - \(ffNumber(mirror)); float3 sign3 = sign(mirrorin); float3 E = abs(mirrorin) + \(ffNumber(mirror)); float3 above = float3(E > \(ffNumber(breakpoint)));\n"
+        var body = "{ float3 mirrorin = pixel.rgb - \(ffNumber(mirror)); float3 sign3 = sign(mirrorin); float3 E = abs(mirrorin) + \(ffNumber(mirror)); float3 above = select(float3(0.0f), float3(1.0f), E > \(ffNumber(breakpoint)));\n"
         if inverse {
             body += "float3 gamma = pow(E * \(ffNumber(1 / p[3])), float3(\(ffNumber(1 / p[2])))) - \(ffNumber(p[4]));\n"
             body += "float3 logarithmic = (exp((E - \(ffNumber(p[7]))) * \(ffNumber(1 / slope))) - \(ffNumber(p[9]))) * \(ffNumber(1 / p[8]));\n"
@@ -654,7 +676,7 @@ extension OCIONativeCompiler {
         let slope1 = p[3] / log(p[0]), slope2 = p[7] / log(p[0])
         let break1 = inverse ? slope1 * log(p[5] * p[1] + p[6]) + p[4] : p[1]
         let break2 = inverse ? slope2 * log(p[9] * p[2] + p[10]) + p[8] : p[2]
-        var body = "{ float3 seg1 = float3(pixel.rgb <= \(ffNumber(break1))); float3 seg3 = float3(pixel.rgb >= \(ffNumber(break2))); float3 seg2 = 1.0f - seg1 - seg3;\n"
+        var body = "{ float3 seg1 = select(float3(0.0f), float3(1.0f), pixel.rgb <= \(ffNumber(break1))); float3 seg3 = select(float3(0.0f), float3(1.0f), pixel.rgb >= \(ffNumber(break2))); float3 seg2 = 1.0f - seg1 - seg3;\n"
         if inverse {
             body += "float3 log1 = (exp((pixel.rgb - \(ffNumber(p[4]))) * \(ffNumber(1 / slope1))) - \(ffNumber(p[6]))) * \(ffNumber(1 / p[5]));\n"
             body += "float3 log2 = (exp((pixel.rgb - \(ffNumber(p[8]))) * \(ffNumber(1 / slope2))) - \(ffNumber(p[10]))) * \(ffNumber(1 / p[9]));\n"
@@ -678,8 +700,8 @@ private func ffNumber(_ value: Double) -> String {
 
 extension OCIONativeCompiler {
     private func fixedACES2RGBToJMh(_ parameters: [Double], inverse: Bool,
-                                    owner: NativeParameters) throws -> String {
-        let p = try FFJMhParameters(primaries: parameters.map { Double(Float($0)) })
+                                    owner: NativeParameters, roundPrimaries: Bool = true) throws -> String {
+        let p = try FFJMhParameters(primaries: roundPrimaries ? parameters.map { Double(Float($0)) } : parameters)
         if inverse {
             return """
             {
@@ -798,4 +820,469 @@ private func ffMatrixProduct(_ matrix: [Float], _ expression: String) -> String 
     "float3(" + (0..<3).map { row in
         "dot(float3(" + matrix[(row * 3)..<(row * 3 + 3)].map { ffNumber(Double($0)) }.joined(separator: ", ") + "), \(expression))"
     }.joined(separator: ", ") + ")"
+}
+
+extension FFJMhParameters {
+    func rgbToAab(_ rgb: [Float]) -> [Float] {
+        let response = ffMatrixVector(rgbToCAM, rgb).map { value -> Float in
+            let power = pow(abs(value), Float(0.42))
+            return (value < 0 ? -power : power) / (27.13 + power)
+        }
+        return ffMatrixVector(coneToAab, response)
+    }
+
+    func rgbToJMh(_ rgb: [Float]) -> [Float] {
+        let aab = rgbToAab(rgb)
+        if aab[0] <= 0 { return [0, 0, 0] }
+        let j = 100 * pow(aab[0], cz)
+        let m = sqrt(aab[1] * aab[1] + aab[2] * aab[2])
+        var hue = 180 * atan2(aab[2], aab[1]) / Float.pi
+        if hue < 0 { hue += 360 }
+        return [j, m, hue]
+    }
+
+    func luminanceToJ(_ luminance: Float) -> Float {
+        let compressed = pow(abs(luminance) * luminanceScale, Float(0.42))
+        let response = compressed / (27.13 + compressed)
+        let j = 100 * pow(response / whiteResponse, cz)
+        return luminance < 0 ? -j : j
+    }
+
+    func jmhToRGB(j: Float, m: Float, hue: Float) -> [Float] {
+        let radians = Float.pi * hue / 180
+        let aab = [pow(j * 0.01, inverseCZ), m * cos(radians), m * sin(radians)]
+        let response = ffMatrixVector(aabToCone, aab)
+        let lms = response.map { value -> Float in
+            let clamped = min(abs(value), Float(0.99))
+            let result = pow(27.13 * clamped / (1 - clamped), Float(1) / Float(0.42))
+            return value < 0 ? -result : result
+        }
+        return ffMatrixVector(camToRGB, lms)
+    }
+}
+
+private func ffLerp(_ a: Float, _ b: Float, _ t: Float) -> Float { a + t * (b - a) }
+
+private func ffFocus(_ j: Float, _ midJ: Float, _ maxJ: Float) -> Float {
+    ffLerp(j, midJ, min(1, Float(1.3) - j / maxJ))
+}
+
+private func ffFocusGain(_ j: Float, _ threshold: Float, _ maxJ: Float, _ distance: Float) -> Float {
+    var gain = maxJ * distance
+    if j > threshold {
+        let adjustment = log10((maxJ - threshold) / max(Float(0.0001), maxJ - j))
+        gain *= adjustment * adjustment + 1
+    }
+    return gain
+}
+
+private func ffSolveIntersection(_ j: Float, _ m: Float, _ focus: Float, _ maxJ: Float, _ gain: Float) -> Float {
+    let scaled = m / gain, a = scaled / focus
+    if j < focus {
+        let b = 1 - scaled, c = -j
+        return -2 * c / (b + sqrt(b * b - 4 * a * c))
+    }
+    let b = -(1 + scaled + maxJ * a), c = maxJ * scaled + j
+    return -2 * c / (b - sqrt(b * b - 4 * a * c))
+}
+
+private func ffGamutSlope(_ intersection: Float, _ focus: Float, _ maxJ: Float, _ gain: Float) -> Float {
+    let scale = intersection < focus ? intersection : maxJ - intersection
+    return scale * (intersection - focus) / (focus * gain)
+}
+
+private func ffBoundaryEstimate(_ intersection: Float, _ slope: Float, _ inverseGamma: Float,
+                                _ maxJ: Float, _ maxM: Float, _ reference: Float) -> Float {
+    let shifted = reference * pow(intersection / reference, inverseGamma)
+    return shifted * maxM / (maxJ - slope * maxM)
+}
+
+private func ffBoundary(_ cusp: [Float], _ maxJ: Float, _ top: Float, _ bottom: Float,
+                        _ source: Float, _ slope: Float, _ cuspIntersection: Float) -> Float {
+    let lower = ffBoundaryEstimate(source, slope, bottom, cusp[0], cusp[1], cuspIntersection)
+    let upper = ffBoundaryEstimate(maxJ - source, -slope, top, maxJ - cusp[0], cusp[1], maxJ - cuspIntersection)
+    let scale = Float(0.12) * cusp[1]
+    let h = max(scale - abs(lower - upper), 0) / scale
+    return min(lower, upper) - h * h * h * scale * (Float(1) / 6)
+}
+
+private struct FFGamutParameters {
+    let hueTable: [Float]
+    let cuspTable: [[Float]]
+    let midJ: Float
+    let focusDistance: Float
+    let lowerGammaInverse: Float
+
+    init(peak: Float, input: FFJMhParameters, limiting: FFJMhParameters, reach: FFJMhParameters,
+         tone: FFToneScaleParameters, limitJ: Float) throws {
+        let mid = input.luminanceToJ(tone.grayTarget * 100)
+        let distance = Float(1.35) + Float(1.35) * Float(1.75) * tone.logPeak
+        let bottom = 1 / (Float(1.14) + Float(0.07) * tone.logPeak)
+        midJ = mid
+        focusDistance = distance
+        lowerGammaInverse = bottom
+        func corner(_ index: Int) -> [Float] {
+            [Float((index + 1) % 6 < 3 ? 1 : 0), Float((index + 5) % 6 < 3 ? 1 : 0), Float((index + 3) % 6 < 3 ? 1 : 0)]
+        }
+        let rgbUnsorted = (0..<6).map { index in corner(index).map { $0 * (peak / 100) } }
+        let jmhUnsorted = rgbUnsorted.map(limiting.rgbToJMh)
+        guard jmhUnsorted.allSatisfy({ $0.allSatisfy(\.isFinite) }) else {
+            throw OCIOConfigError.invalid("ACES 2 limiting gamut has nonfinite corner values")
+        }
+        let first = (0..<6).min(by: { jmhUnsorted[$0][2] < jmhUnsorted[$1][2] })!
+        var rgbCorners = (0..<6).map { rgbUnsorted[($0 + first) % 6] }
+        var jmhCorners = (0..<6).map { jmhUnsorted[($0 + first) % 6] }
+        rgbCorners.insert(rgbCorners[5], at: 0)
+        rgbCorners.append(rgbCorners[1])
+        jmhCorners.insert(jmhCorners[5], at: 0)
+        jmhCorners.append(jmhCorners[1])
+        jmhCorners[0][2] -= 360
+        jmhCorners[7][2] += 360
+        let limitA = pow(limitJ * 0.01, reach.inverseCZ)
+        var reachHues: [Float] = []
+        for index in 0..<6 {
+            let vector = corner(index)
+            var low: Float = 0, high = tone.forwardLimit
+            while high - low > 0.001 {
+                let test = (low + high) / 2
+                if test == low || test == high { break }
+                let a = reach.rgbToAab(vector.map { $0 * test })[0]
+                if a < limitA { low = test } else { high = test }
+                if a == limitA { break }
+            }
+            reachHues.append(reach.rgbToJMh(vector.map { $0 * high })[2])
+        }
+        let sortedHues = Array(Set(reachHues + jmhUnsorted.map { $0[2] })).sorted()
+        guard !sortedHues.isEmpty, sortedHues.allSatisfy({ $0.isFinite && $0 >= 0 && $0 < 360 }) else {
+            throw OCIOConfigError.invalid("ACES 2 gamut hue ordering is invalid")
+        }
+        var positions: [Int] = []
+        var minimum = sortedHues[0] == 0 ? 0 : 1
+        var last = -1
+        for (index, hue) in sortedHues.enumerated() {
+            var nominal = min(max(Int(hue.rounded(.toNearestOrAwayFromZero)), minimum), 359)
+            if last == nominal {
+                if index > 1 && positions[index - 2] != positions[index - 1] - 1 { positions[index - 1] -= 1 }
+                else { nominal += 1 }
+            }
+            positions.append(min(nominal, 359))
+            last = nominal
+            minimum = nominal
+        }
+        var hues = [Float](repeating: 0, count: 363)
+        var used = 0
+        func interval(_ samples: Int, _ lower: Float, _ upper: Float) throws {
+            guard samples >= 0, used + samples <= 360 else {
+                throw OCIOConfigError.invalid("ACES 2 cusp hues exhaust the 360-sample table")
+            }
+            if samples > 0 {
+                let delta = (upper - lower) / Float(samples)
+                for index in 0..<samples { hues[used + index + 1] = lower + Float(index) * delta }
+                used += samples
+            }
+        }
+        try interval(positions[0], 0, sortedHues[0])
+        for index in 1..<sortedHues.count { try interval(positions[index] - positions[index - 1], sortedHues[index - 1], sortedHues[index]) }
+        try interval(360 - used, sortedHues.last!, 360)
+        hues[0] = hues[360] - 360
+        hues[361] = hues[1] + 360
+        hues[362] = hues[2] + 360
+        var cusps = [[Float]](repeating: [0, 0, 0], count: 363)
+        var previousCorner = 0
+        var previousFraction: Float = 0
+        for index in 1...360 {
+            let hue = hues[index]
+            let upperCorner = (1..<8).first(where: { jmhCorners[$0][2] > hue }) ?? 1
+            let lowerCorner = upperCorner - 1
+            let jmh: [Float]
+            if jmhCorners[lowerCorner][2] == hue { jmh = jmhCorners[lowerCorner] }
+            else {
+                var lower: Float = upperCorner == previousCorner ? previousFraction : 0
+                var upper: Float = 1
+                func sample(_ t: Float) -> [Float] {
+                    limiting.rgbToJMh((0..<3).map { ffLerp(rgbCorners[lowerCorner][$0], rgbCorners[upperCorner][$0], t) })
+                }
+                while upper - lower > 0.0000001 {
+                    let t = (lower + upper) / 2
+                    if t == lower || t == upper { break }
+                    let candidate = sample(t)
+                    if candidate[2] < jmhCorners[lowerCorner][2] { upper = t }
+                    else if candidate[2] >= jmhCorners[upperCorner][2] { lower = t }
+                    else if candidate[2] > hue { upper = t }
+                    else { lower = t }
+                }
+                let fraction = (lower + upper) / 2
+                jmh = sample(fraction)
+                previousCorner = upperCorner
+                previousFraction = fraction
+            }
+            cusps[index] = [jmh[0], jmh[1] * (1 + Float(0.27) * Float(0.12)), hue]
+        }
+        for index in 1...360 {
+            let cusp = cusps[index], hue = hues[index]
+            let threshold = ffLerp(cusp[0], limitJ, 0.3)
+            let focus = ffFocus(cusp[0], mid, limitJ)
+            let tests: [(Float, Float, Float)] = [Float(0.01), 0.1, 0.5, 0.8, 0.99].map { position in
+                let testJ = ffLerp(cusp[0], limitJ, position)
+                let gain = ffFocusGain(testJ, threshold, limitJ, distance)
+                let intersection = ffSolveIntersection(testJ, cusp[1], focus, limitJ, gain)
+                return (intersection, ffGamutSlope(intersection, focus, limitJ, gain), ffSolveIntersection(cusp[0], cusp[1], focus, limitJ, gain))
+            }
+            func fits(_ gamma: Float) -> Bool {
+                for (intersection, slope, cuspIntersection) in tests {
+                    let m = ffBoundary(cusp, limitJ, 1 / gamma, bottom, intersection, slope, cuspIntersection)
+                    let j = intersection + slope * m
+                    if !limiting.jmhToRGB(j: j, m: m, hue: hue).contains(where: { $0 > peak / 100 }) { return false }
+                }
+                return true
+            }
+            var low: Float = 0, high: Float = 0.4
+            while high < 5 && !fits(high) { low = high; high += 0.4 }
+            while high - low > 0.00001 {
+                let midpoint = (high + low) / 2
+                if midpoint == low || midpoint == high { break }
+                if fits(midpoint) { high = midpoint } else { low = midpoint }
+            }
+            cusps[index][2] = 1 / high
+        }
+        cusps[0] = cusps[360]
+        cusps[361] = cusps[1]
+        cusps[362] = cusps[2]
+        hueTable = hues
+        cuspTable = cusps
+    }
+}
+
+extension OCIONativeCompiler {
+    private mutating func fixedACES2Gamut(peak: Float, primaries: [Double], inverse: Bool) throws -> String {
+        let input = try FFJMhParameters(primaries: [0.7347, 0.2653, 0, 1, 0.0001, -0.077, 0.32168, 0.33767])
+        let reach = try FFJMhParameters(primaries: [0.713, 0.293, 0.165, 0.83, 0.128, 0.044, 0.32168, 0.33767])
+        let limiting = try FFJMhParameters(primaries: primaries.map { Double(Float($0)) })
+        let tone = FFToneScaleParameters(peak: peak)
+        let maximumJ = input.luminanceToJ(peak)
+        let gamut = try FFGamutParameters(peak: peak, input: input, limiting: limiting, reach: reach, tone: tone, limitJ: maximumJ)
+        let reachIndex = textures.count
+        textures.append(OCIONativeTexture(index: reachIndex, dimension: 1, width: 363, height: 1, depth: 1,
+            channels: 1, values: ffReachTable(reach, limitJ: maximumJ)))
+        let cuspIndex = textures.count
+        let cuspValues = (0..<363).flatMap { gamut.cuspTable[$0] + [gamut.hueTable[$0]] }
+        textures.append(OCIONativeTexture(index: cuspIndex, dimension: 1, width: 363, height: 1, depth: 1,
+            channels: 4, values: cuspValues))
+        let prefix = "ocio_ff_gamut_\(helperFunctions.count)"
+        func f(_ value: Float) -> String { ffNumber(Double(value)) }
+        let maxJ = f(maximumJ)
+        let remap = inverse ? "if (nd >= 1.0f) return threshold + scale; return threshold + scale * -(nd / (nd - 1.0f));" : "return threshold + scale * nd / (1.0f + nd);"
+        helperFunctions.append("""
+        float \(prefix)_intersect(float J, float M, float focus, float gain) {
+            float scaled = M / gain;
+            float a = scaled / focus;
+            if (J < focus) {
+                float b = 1.0f - scaled;
+                float c = -J;
+                return -2.0f * c / (b + sqrt(b * b - 4.0f * a * c));
+            }
+            float b = -(1.0f + scaled + \(maxJ) * a);
+            float c = \(maxJ) * scaled + J;
+            return -2.0f * c / (b - sqrt(b * b - 4.0f * a * c));
+        }
+        float \(prefix)_boundary(float2 cusp, float top, float source, float reference, float slope) {
+            float lower = reference * pow(source / reference, \(f(gamut.lowerGammaInverse))) / (cusp.r / cusp.g - slope);
+            float upper = cusp.g * (\(maxJ) - reference) * pow((\(maxJ) - source) / (\(maxJ) - reference), top) / (slope * cusp.g + \(maxJ) - cusp.r);
+            float scale = 0.12f * cusp.g;
+            float h = max(scale - abs(lower - upper), 0.0f) / scale;
+            return min(lower, upper) - h * h * h * scale * \(ffNumber(1 / 6));
+        }
+        float \(prefix)_remap(float M, float boundary, float reach) {
+            float proportion = max(boundary / reach, 0.75f);
+            float threshold = proportion * boundary;
+            if (proportion >= 1.0f || M <= threshold) return M;
+            float offset = M - threshold;
+            float gamutOffset = boundary - threshold;
+            float reachOffset = reach - threshold;
+            float scale = reachOffset / (reachOffset / gamutOffset - 1.0f);
+            float nd = offset / scale;
+            \(remap)
+        }
+        float3 \(prefix)_compress(float3 JMh, float Jx, float3 cusp, float reachM) {
+            float J = JMh.r, M = JMh.g;
+            if (M <= 0.0f || J > \(maxJ)) return float3(J, 0.0f, JMh.b);
+            float focus = mix(cusp.r, \(f(gamut.midJ)), min(1.0f, 1.3f - cusp.r / \(maxJ)));
+            float threshold = mix(cusp.r, \(maxJ), 0.3f);
+            float gain = \(f(maximumJ * gamut.focusDistance));
+            if (Jx > threshold) {
+                float adjustment = (\(maxJ) - threshold) / max(0.0001f, \(maxJ) - Jx);
+                adjustment = log(adjustment) / log(10.0f);
+                gain *= adjustment * adjustment + 1.0f;
+            }
+            float source = \(prefix)_intersect(J, M, focus, gain);
+            float slope = source < focus ? source : \(maxJ) - source;
+            slope *= (source - focus) / (focus * gain);
+            float reference = \(prefix)_intersect(cusp.r, cusp.g, focus, gain);
+            float boundary = \(prefix)_boundary(cusp.rg, cusp.b, source, reference, slope);
+            if (boundary <= 0.0f) return float3(J, 0.0f, JMh.b);
+            float reachBoundary = \(maxJ) * pow(source / \(maxJ), \(f(input.inverseCZ)));
+            reachBoundary /= (\(maxJ) / reachM) - slope;
+            float remapped = \(prefix)_remap(M, boundary, reachBoundary);
+            return float3(source + remapped * slope, remapped, JMh.b);
+        }
+        """)
+        var body = """
+        {
+            float hue = pixel.b - floor(pixel.b / 360.0f) * 360.0f;
+            hue = hue < 0.0f ? hue + 360.0f : hue;
+            pixel.b = hue;
+            constexpr sampler tableSampler(coord::normalized, address::clamp_to_edge, filter::nearest);
+            float base = floor(hue);
+            float reachLow = lut\(reachIndex).sample(tableSampler, (base + 1.5f) / 363.0f).r;
+            float reachHigh = lut\(reachIndex).sample(tableSampler, (base + 2.5f) / 363.0f).r;
+            float reachM = mix(reachLow, reachHigh, hue - base);
+            int low = 0, high = 361;
+            while (low + 1 < high) {
+                int midpoint = (low + high) / 2;
+                float currentHue = lut\(cuspIndex).sample(tableSampler, (float(midpoint) + 0.5f) / 363.0f).a;
+                if (hue > currentHue) low = midpoint;
+                else high = midpoint;
+            }
+            float4 lower = lut\(cuspIndex).sample(tableSampler, (float(high) - 0.5f) / 363.0f);
+            float4 upper = lut\(cuspIndex).sample(tableSampler, (float(high) + 0.5f) / 363.0f);
+            float3 cusp = mix(lower.rgb, upper.rgb, (hue - lower.a) / (upper.a - lower.a));
+            float Jx = pixel.r;
+        """
+        if inverse {
+            body += "if (Jx > mix(cusp.r, \(maxJ), 0.3f)) Jx = \(prefix)_compress(pixel.rgb, Jx, cusp, reachM).r;\n"
+        }
+        return body + "pixel.rgb = \(prefix)_compress(pixel.rgb, Jx, cusp, reachM); }"
+    }
+}
+
+private struct FFToneScaleParameters {
+    let s2: Float
+    let m2: Float
+    let inverseLimit: Float
+    let forwardLimit: Float
+    let grayTarget: Float
+    let logPeak: Float
+
+    init(peak n: Float) {
+        let reference: Float = 100, g: Float = 1.15, toe: Float = 0.04
+        let roof = 128 + (896 - 128) * (log(n / reference) / log(Float(10000) / 100))
+        let m0 = n / reference
+        let m1 = 0.5 * (m0 + sqrt(m0 * (m0 + 4 * toe)))
+        let u = pow((roof / m1) / ((roof / m1) + 1), g)
+        let m = m1 / u
+        let wi = log(n / 100) / log(Float(2))
+        let ct: Float = 10.013 / reference * (1 + wi * 0.14)
+        let gip = 0.5 * (ct + sqrt(ct * (ct + 4 * toe)))
+        let gipp2 = -(m1 * pow(gip / m, 1 / g)) / (pow(gip / m, 1 / g) - 1)
+        let w2: Float = 0.18 / gipp2
+        s2 = w2 * m1 * reference
+        let u2 = pow((roof / m1) / ((roof / m1) + w2), g)
+        m2 = m1 / u2
+        inverseLimit = n / (u2 * reference)
+        forwardLimit = 8 * roof
+        grayTarget = ct
+        logPeak = log10(n / reference)
+    }
+}
+
+private func ffReachTable(_ parameters: FFJMhParameters, limitJ: Float) -> [Float] {
+    var table = [Float](repeating: 0, count: 363)
+    for hue in 0..<360 {
+        var low: Float = 0, high: Float = 50
+        while high < 1300 {
+            if parameters.jmhToRGB(j: limitJ, m: high, hue: Float(hue)).contains(where: { $0 < 0 }) { break }
+            low = high
+            high += 50
+        }
+        while high - low > 0.01 {
+            let midpoint = (high + low) / 2
+            if parameters.jmhToRGB(j: limitJ, m: midpoint, hue: Float(hue)).contains(where: { $0 < 0 }) { high = midpoint }
+            else { low = midpoint }
+        }
+        table[hue + 1] = high
+    }
+    table[0] = table[360]
+    table[361] = table[1]
+    table[362] = table[2]
+    return table
+}
+
+extension OCIONativeCompiler {
+    private mutating func fixedACES2ToneScale(peak: Float, inverse: Bool) throws -> String {
+        let p = try FFJMhParameters(primaries: [0.7347, 0.2653, 0, 1, 0.0001, -0.077, 0.32168, 0.33767])
+        let reach = try FFJMhParameters(primaries: [0.713, 0.293, 0.165, 0.83, 0.128, 0.044, 0.32168, 0.33767])
+        let t = FFToneScaleParameters(peak: peak)
+        let limitJ = p.luminanceToJ(peak)
+        let lutIndex = textures.count
+        textures.append(OCIONativeTexture(index: lutIndex, dimension: 1, width: 363, height: 1,
+            depth: 1, channels: 1, values: ffReachTable(reach, limitJ: limitJ)))
+        let prefix = "ocio_ff_tone_\(helperFunctions.count)"
+        func f(_ value: Float) -> String { ffNumber(Double(value)) }
+        let toeName = prefix + "_toe"
+        let toneName = prefix + "_curve"
+        let toeResult = inverse ? "(x * x + k1 * x) / (k3 * (x + k2))" : "0.5f * (k3 * x - k1 + sqrt((k3 * x - k1) * (k3 * x - k1) + 4.0f * k2 * k3 * x))"
+        helperFunctions.append("""
+        float \(toeName)(float x, float limit, float k1in, float k2in) {
+            float k2 = max(k2in, 0.001f);
+            float k1 = sqrt(k1in * k1in + k2 * k2);
+            float k3 = (limit + k1) / (limit + k2);
+            return (x > limit) ? x : \(toeResult);
+        }
+        """)
+        var tone = "float \(toneName)(float J) { float A = \(f(p.whiteResponse)) * pow(abs(J) * 0.01f, \(f(p.inverseCZ))); float Y = pow(27.13f * A / (1.0f - A), \(ffNumber(1 / 0.42)));\n"
+        if inverse {
+            tone += "float Yi = Y / \(ffNumber(Double(p.luminanceScale) * 100)); float Z = max(0.0f, min(\(f(t.inverseLimit)), Yi)); float ht = 0.5f * (Z + sqrt(Z * (\(ffNumber(4 * Double(Float(0.04)))) + Z)));\n"
+            tone += "float Yo = \(ffNumber(Double(p.luminanceScale) * Double(t.s2))) / (pow(\(f(t.m2)) / ht, \(ffNumber(1 / Double(Float(1.15))))) - 1.0f); float FLY = pow(abs(Yo), 0.42f);\n"
+        } else {
+            tone += "float f = \(f(t.m2)) * pow(Y / (Y + \(ffNumber(Double(t.s2) * Double(p.luminanceScale)))), 1.15f); float Yts = max(0.0f, f * f / (f + 0.04f)); float FLY = pow(\(ffNumber(Double(p.luminanceScale) * 100)) * Yts, 0.42f);\n"
+        }
+        tone += "float Jts = 100.0f * pow(FLY / (27.13f + FLY) * \(f(1 / p.whiteResponse)), \(f(p.cz))); return sign(J) * Jts; }"
+        helperFunctions.append(tone)
+        let sat = max(Float(0.2), Float(1.3) - (Float(1.3) * Float(0.69)) * t.logPeak)
+        let satThreshold: Float = 0.5 / peak
+        let compression = Float(2.4) + (Float(2.4) * Float(3.3)) * t.logPeak
+        let chromaScale = pow(Float(0.03379) * peak, Float(0.30596)) - Float(0.45135)
+        let cosineWeights = [11.34072, 16.46899, 7.88380].map { ffNumber($0 * Double(chromaScale)) }.joined(separator: ",")
+        let sineWeights = [14.66441, -6.37224, 9.19364].map { ffNumber($0 * Double(chromaScale)) }.joined(separator: ",")
+        var result = """
+        {
+            float hue = pixel.b - floor(pixel.b / 360.0f) * 360.0f;
+            hue = hue < 0.0f ? hue + 360.0f : hue;
+            float angle = hue * \(f(Float.pi / 180));
+            float cosine = cos(angle), sine = sin(angle);
+            constexpr sampler reachSampler(coord::normalized, address::clamp_to_edge, filter::nearest);
+            float base = floor(hue);
+            float reachLow = lut\(lutIndex).sample(reachSampler, (base + 1.5f) / 363.0f).r;
+            float reachHigh = lut\(lutIndex).sample(reachSampler, (base + 2.5f) / 363.0f).r;
+            float reachM = mix(reachLow, reachHigh, hue - base);
+            float originalJ = pixel.r;
+            float convertedJ = \(toneName)(originalJ);
+            float M = pixel.g;
+            if (M != 0.0f) {
+                float nJ = \(inverse ? "originalJ" : "convertedJ") / \(f(limitJ));
+                float snJ = max(0.0f, 1.0f - nJ);
+                float3 cosines = float3(cosine, 2.0f * cosine * cosine - 1.0f, 4.0f * cosine * cosine * cosine - 3.0f * cosine);
+                float3 sines = float3(sine, 2.0f * cosine * sine, 3.0f * sine - 4.0f * sine * sine * sine);
+                float Mnorm = dot(cosines, float3(\(cosineWeights))) + dot(sines, float3(\(sineWeights))) + \(ffNumber(77.12896 * Double(chromaScale)));
+                float limit = pow(nJ, \(f(p.inverseCZ))) * reachM / Mnorm;
+        """
+        if inverse {
+            result += """
+                    M /= Mnorm;
+                    M = \(toeName)(M, limit, nJ * \(f(compression)), snJ);
+                    M = limit - \(toeName)(limit - M, limit - 0.001f, snJ * \(f(sat)), sqrt(nJ * nJ + \(f(satThreshold))));
+                    M *= Mnorm;
+                    M *= pow(originalJ / convertedJ, \(f(-p.inverseCZ)));
+            """
+        } else {
+            result += """
+                    M *= pow(convertedJ / originalJ, \(f(p.inverseCZ)));
+                    M /= Mnorm;
+                    M = limit - \(toeName)(limit - M, limit - 0.001f, snJ * \(f(sat)), sqrt(nJ * nJ + \(f(satThreshold))));
+                    M = \(toeName)(M, limit, nJ * \(f(compression)), snJ);
+                    M *= Mnorm;
+            """
+        }
+        return result + "} pixel.rgb = float3(convertedJ, M, hue); }"
+    }
 }

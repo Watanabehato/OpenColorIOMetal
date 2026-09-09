@@ -87,7 +87,7 @@ public struct OCIOConfigColorSpace: Sendable, Equatable {
     }
 }
 
-public struct OCIONamedTransform: Sendable, Equatable {
+public struct OCIOConfigNamedTransform: Sendable, Equatable {
     public let name: String
     public let aliases: [String]
     public let forward: OCIOConfigTransform?
@@ -104,7 +104,7 @@ public struct OCIONamedTransform: Sendable, Equatable {
     }
 }
 
-public struct OCIOLook: Sendable, Equatable {
+public struct OCIOConfigLook: Sendable, Equatable {
     public let name: String
     public let processSpace: String
     public let forward: OCIOConfigTransform?
@@ -176,8 +176,8 @@ public struct OCIOConfigDocument: Sendable {
     public let name: String
     public let colorSpaces: [OCIOConfigColorSpace]
     public let roles: [String: String]
-    public let namedTransforms: [OCIONamedTransform]
-    public let looks: [OCIOLook]
+    public let namedTransforms: [OCIOConfigNamedTransform]
+    public let looks: [OCIOConfigLook]
     public let viewTransforms: [OCIOViewTransform]
     public let displays: [String: [OCIOView]]
     public let sharedViews: [OCIOView]
@@ -205,8 +205,8 @@ public struct OCIOConfigDocument: Sendable {
         roles = try stringMapping(fields["roles"], field: "roles")
         colorSpaces = try sequenceField(fields, "colorspaces").map { try OCIOConfigColorSpace(yaml: $0, reference: .scene) }
             + sequenceField(fields, "display_colorspaces").map { try OCIOConfigColorSpace(yaml: $0, reference: .display) }
-        namedTransforms = try sequenceField(fields, "named_transforms").map { try OCIONamedTransform(yaml: $0) }
-        looks = try sequenceField(fields, "looks").map { try OCIOLook(yaml: $0) }
+        namedTransforms = try sequenceField(fields, "named_transforms").map { try OCIOConfigNamedTransform(yaml: $0) }
+        looks = try sequenceField(fields, "looks").map { try OCIOConfigLook(yaml: $0) }
         viewTransforms = try sequenceField(fields, "view_transforms").map { try OCIOViewTransform(yaml: $0) }
         sharedViews = try sequenceField(fields, "shared_views").map { try OCIOView(yaml: $0) }
         activeDisplays = try stringList(fields["active_displays"], field: "active_displays")

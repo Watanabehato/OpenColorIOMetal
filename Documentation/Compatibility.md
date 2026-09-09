@@ -29,7 +29,7 @@ implementation as an oracle.
 | Color spaces | Scene/display reference spaces; names, aliases, roles, isdata and equality groups | Full upstream configuration API, mutability, serialization and interoperability matching |
 | Context | Declared environment defaults/overrides; nested `$VAR`, `${VAR}`, `%VAR%`; search paths and working directory | OCIO environment-mode and unresolved-variable compatibility, platform edge cases and cache invalidation |
 | Graph | Authored to/from-reference selection; inverse direction; scene/display reference bridge; groups; nested ColorSpaceTransform; named transforms; look sequences and named-look alternatives | File-failure-based look fallback, all bypass flags and metadata-driven optimizations |
-| Displays | Parses displays and shared views, retains active/inactive lists, viewing/file rules and virtual display metadata | Native custom DisplayViewTransform execution, rule evaluation, automatic monitor/ICC discovery and virtual display instantiation |
+| Displays | Displays/shared views; native forward/inverse view graphs; scene/display bridges, looks/named substitutions, bypass flags; retains active/inactive lists, viewing/file rules and virtual display metadata | Rule evaluation, automatic monitor/ICC discovery and virtual display instantiation |
 | Error behavior | Unrecognized transform types and unavailable execution paths throw; no unknown transform is treated as identity | Full parity with upstream strict/non-strict parsing diagnostics |
 
 `ConfigurationTests.testEveryUpstreamBuiltinConfigurationAndEveryPairPlan` reads
@@ -50,7 +50,7 @@ catalogue; that does not imply native compilation of every custom operation.
 | BuiltinTransform | Exact exported shader stages, both directions where upstream supports them |
 | CDLTransform | Slope/offset/power/saturation, ASC clamp and no-clamp, both directions; singular inverse rejected |
 | ColorSpaceTransform | Resolves graph recursively, both directions |
-| DisplayViewTransform | Pending native custom execution |
+| DisplayViewTransform | Native scene/display/view/named/look graph compilation, both directions |
 | ExponentTransform | Clamp, mirror, pass-through negatives, both directions |
 | ExponentWithLinearTransform | Linear and mirror negatives, per-channel gamma/offset, both directions |
 | ExposureContrastTransform | Linear, video and logarithmic equations, both directions; values compiled as snapshots |

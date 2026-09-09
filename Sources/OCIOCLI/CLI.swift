@@ -10,7 +10,7 @@ private struct Arguments {
         command = arguments.first ?? "help"
         var index = 1
         let switches: Set<String> = ["--inverse", "--binary", "--gpu", "--help"]
-        let valued: Set<String> = ["--archive", "--config", "--src", "--dst", "--rgba", "--style", "--display", "--view", "--input", "--output", "--suite"]
+        let valued: Set<String> = ["--archive", "--config", "--ocio", "--src", "--dst", "--rgba", "--style", "--name", "--display", "--view", "--input", "--output", "--suite"]
         while index < arguments.count {
             let name = arguments[index]
             if switches.contains(name) { flags.insert(name); index += 1; continue }
@@ -47,6 +47,8 @@ struct OCIOCLI {
             configs              List all built-in configurations
             spaces               List all spaces, including inactive and data spaces
             builtins             List all registered built-in transforms
+            named                Apply --name NAME [--inverse] from a configuration
+            look                 Apply --name NAME [--inverse] in its process space
             views                List display/view names and their source spaces
             convert              Convert RGBA pixels (--src SPACE --dst SPACE)
             builtin              Apply --style NAME [--inverse]
@@ -54,6 +56,7 @@ struct OCIOCLI {
             validate             Validate the complete archive and pair coverage
 
             Common: --archive DIRECTORY --config ID
+            Custom config: convert/display --ocio FILE (native Swift parsing and compilation)
             Pixels: --rgba '0.18,0.18,0.18,1' (multiple RGBA tuples allowed)
                     --input FILE --output FILE --binary (little-endian Float32 RGBA)
                     With --binary, omitted input/output use stdin/stdout.
@@ -110,16 +113,31 @@ struct OCIOCLI {
             } else {
                 print("Archive resources and every configured color-space pair are present.")
             }
-        case "convert", "builtin", "display":
+        case "convert", "builtin", "display", "named", "look":
             let engine = try MetalColorEngine(catalogue: catalogue)
             let processor: ColorProcessor
             let direction: TransformDirection = args.flags.contains("--inverse") ? .inverse : .forward
+            let document = try args.values["--ocio"].map { try OCIOConfigDocument(contentsOf: URL(fileURLWithPath: $0)) }
             switch args.command {
             case "builtin": processor = try engine.builtinProcessor(args.required("--style"), direction: direction)
-            case "display": processor = try engine.displayProcessor(configuration: args.values["--config"],
-                source: args.required("--src"), display: args.required("--display"), view: args.required("--view"), direction: direction)
-            default: processor = try engine.processor(configuration: args.values["--config"],
-                source: args.required("--src"), destination: args.required("--dst"))
+            case "named":
+                if let document {
+                    let steps = try document.namedTransformPlan(args.required("--name"), direction: direction == .forward ? .forward : .inverse)
+                    processor = try engine.nativeProcessor(stages: document.nativeStages(steps: steps))
+                } else { processor = try engine.namedTransformProcessor(configuration: args.values["--config"], name: args.required("--name"), direction: direction) }
+            case "look":
+                guard document == nil else { throw OCIOError.invalidInput("Use a LookTransform in --ocio or a configured display view for a custom look") }
+                processor = try engine.lookProcessor(configuration: args.values["--config"], name: args.required("--name"), direction: direction)
+            case "display":
+                if let document { processor = try engine.nativeDisplayProcessor(configuration: document,
+                    source: args.required("--src"), display: args.required("--display"), view: args.required("--view"), direction: direction) }
+                else { processor = try engine.displayProcessor(configuration: args.values["--config"],
+                    source: args.required("--src"), display: args.required("--display"), view: args.required("--view"), direction: direction) }
+            default:
+                if let document { processor = try engine.nativeProcessor(configuration: document,
+                    source: args.required("--src"), destination: args.required("--dst")) }
+                else { processor = try engine.processor(configuration: args.values["--config"],
+                    source: args.required("--src"), destination: args.required("--dst")) }
             }
             let input = try pixels(args)
             let result = try processor.processRGBA(input)

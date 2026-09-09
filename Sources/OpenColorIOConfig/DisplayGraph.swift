@@ -75,9 +75,9 @@ extension OCIOConfigDocument {
         return displayReferenceStep(toReference: source == .display, to: bridge.toReference, from: bridge.fromReference, label: bridge.name)
     }
 
-    func selectedLooks(_ specification: String) throws -> [(OCIOLook, Bool)] {
+    func selectedLooks(_ specification: String) throws -> [(OCIOConfigLook, Bool)] {
         for alternative in specification.split(separator: "|", omittingEmptySubsequences: false) {
-            var selected: [(OCIOLook, Bool)] = []
+            var selected: [(OCIOConfigLook, Bool)] = []
             var valid = true
             for component in alternative.split(separator: ",") {
                 let text = component.trimmingCharacters(in: .whitespaces)
@@ -92,7 +92,7 @@ extension OCIOConfigDocument {
         throw OCIOConfigError.unavailableTransform("none of the look alternatives exists: \(specification)")
     }
 
-    func lookSteps(from source: String, selected: [(OCIOLook, Bool)], inverse: Bool, dataBypass: Bool = true) throws -> (steps: [OCIOConfigTransformStep], result: String) {
+    func lookSteps(from source: String, selected: [(OCIOConfigLook, Bool)], inverse: Bool, dataBypass: Bool = true) throws -> (steps: [OCIOConfigTransformStep], result: String) {
         let selected = inverse ? selected.reversed().map { ($0.0, !$0.1) } : selected
         var steps: [OCIOConfigTransformStep] = []
         var current = source

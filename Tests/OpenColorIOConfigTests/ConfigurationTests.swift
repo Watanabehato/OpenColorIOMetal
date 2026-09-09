@@ -58,6 +58,11 @@ final class ConfigurationTests: XCTestCase {
         XCTAssertTrue(try config.conversionPlan(from: "Camera", to: "Raw").isEmpty)
         XCTAssertFalse(try config.conversionPlan(from: "Camera", to: "Raw", dataBypass: false).isEmpty)
         XCTAssertTrue(try config.conversionPlan(from: "Equal A", to: "Equal B").isEmpty)
+        let displayForward = try config.displayViewPlan(source: "Camera", display: "Monitor", view: "Standard")
+        XCTAssertEqual(displayForward.map { $0.transform.type }, ["LogAffineTransform", "MatrixTransform", "ExponentTransform"])
+        let displayReverse = try config.displayViewPlan(source: "Camera", display: "Monitor", view: "Standard", direction: .inverse)
+        XCTAssertEqual(displayReverse.map(\.direction), [.inverse, .inverse, .forward])
+        XCTAssertTrue(try config.displayViewPlan(source: "Camera", display: "Monitor", view: "Raw").isEmpty)
     }
 
     func testUnknownTransformsNeverBecomeIdentity() throws {
@@ -134,6 +139,14 @@ final class ConfigurationTests: XCTestCase {
             for named in config.namedTransforms {
                 XCTAssertFalse(try config.namedTransformPlan(named.name).isEmpty)
                 XCTAssertFalse(try config.namedTransformPlan(named.name, direction: .inverse).isEmpty)
+            }
+            for (display, views) in config.displays {
+                for view in views {
+                    for source in config.colorSpaces {
+                        _ = try config.displayViewPlan(source: source.name, display: display, view: view.name)
+                        _ = try config.displayViewPlan(source: source.name, display: display, view: view.name, direction: .inverse)
+                    }
+                }
             }
         }
     }

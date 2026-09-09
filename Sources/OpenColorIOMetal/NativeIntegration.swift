@@ -6,6 +6,13 @@ extension MetalColorEngine {
         try nativeProcessor(stages: configuration.nativeStages(from: source, to: destination, dataBypass: dataBypass))
     }
 
+    public func nativeDisplayProcessor(configuration: OCIOConfigDocument, source: String, display: String,
+                                       view: String, direction: TransformDirection = .forward,
+                                       looksBypass: Bool = false, dataBypass: Bool = true) throws -> ColorProcessor {
+        try nativeProcessor(stages: configuration.nativeDisplayStages(source: source, display: display, view: view,
+            direction: direction == .forward ? .forward : .inverse, looksBypass: looksBypass, dataBypass: dataBypass))
+    }
+
     public func nativeProcessor(stages: [OCIONativeStage]) throws -> ColorProcessor {
         let processors = try stages.map { stage in
             switch stage {

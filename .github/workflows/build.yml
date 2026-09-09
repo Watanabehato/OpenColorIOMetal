@@ -50,6 +50,17 @@ jobs:
             --upstream-source build/upstream --oracle-build-root build/oracle
           python3 -m unittest discover -s Tools -p 'test_*.py' -v
           python3 Tools/audit_catalogue.py Sources/OpenColorIOMetal/Resources/Catalogue --compare-registry
+          python3 Tools/generate-native-reference.py
+          python3 Tools/generate-fixed-reference.py
+          python3 Tools/generate-grading-reference.py --fixtures Tests/OpenColorIOConfigTests/Fixtures/grading-reference.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exact-native-reference
+          path: |
+            Sources/OpenColorIOConfig/FixedFunctions.swift
+            Sources/OpenColorIOConfig/Grading.swift
+            Tests/OpenColorIOConfigTests/Fixtures/*reference.json
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
           name: native-metal-catalogue
@@ -84,6 +95,10 @@ jobs:
         with:
           name: native-metal-catalogue
           path: Sources/OpenColorIOMetal/Resources/Catalogue
+      - uses: actions/download-artifact@v4
+        with:
+          name: exact-native-reference
+          path: .
       - name: Build Swift 6 package and run full metadata/configuration tests
         run: swift test
       - name: Compile every unique Metal shader

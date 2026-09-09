@@ -108,6 +108,9 @@ struct OCIONativeCompiler {
         case "FixedFunctionTransform":
             let code = try fixedFunction(p, inverse: inverse)
             body.append(code)
+        case "GradingPrimaryTransform", "GradingRGBCurveTransform", "GradingHueCurveTransform", "GradingToneTransform":
+            let code = try grading(p, type: transform.type, inverse: inverse)
+            body.append(code)
         default: throw OCIOConfigError.unavailableTransform("native \(transform.type) execution is not implemented")
         }
     }

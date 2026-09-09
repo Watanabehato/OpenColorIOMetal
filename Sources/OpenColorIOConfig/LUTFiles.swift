@@ -12,11 +12,13 @@ public struct OCIONativeLUT: Sendable {
 
 public enum OCIONativeFileOperation: Sendable {
     case lut(OCIONativeLUT)
+    case configuredLUT(OCIONativeLUT, interpolation: String, inverse: Bool)
     case transform(OCIOConfigTransform)
 }
 
 public enum OCIOLUTFile {
     public static func read(_ url: URL, cccID: String? = nil) throws -> [OCIONativeFileOperation] {
+        if ["icc", "icm", "pf"].contains(url.pathExtension.lowercased()) { return try ICCProfile.read(Data(contentsOf: url)) }
         let source = try String(contentsOf: url, encoding: .utf8)
         switch url.pathExtension.lowercased() {
         case "cube": return try cube(source)
@@ -24,7 +26,8 @@ public enum OCIOLUTFile {
         case "spi3d": return [.lut(try spi3d(source))]
         case "spimtx": return [.transform(try spimtx(source))]
         case "cc", "ccc", "cdl": return try CDLXMLFile.read(source, cccID: cccID)
-        default: throw OCIOConfigError.unavailableTransform("native file format '.\(url.pathExtension)' is not implemented")
+        case "ctf", "clf": return try CTFFile.read(source, relativeTo: url.deletingLastPathComponent())
+        default: return try readLegacy(source, extension: url.pathExtension, filename: url.lastPathComponent)
         }
     }
     static func rows(_ source: String) -> [[String]] {
@@ -83,8 +86,8 @@ public enum OCIOLUTFile {
             consumed = count
         }
         if let size3D {
-            let lower = range3D.map { Array(repeating: $0[0], count: 3) } ?? (size1D == nil ? minimum : [0, 0, 0])
-            let upper = range3D.map { Array(repeating: $0[1], count: 3) } ?? (size1D == nil ? maximum : [1, 1, 1])
+            let lower: [Double] = range3D.map { Array(repeating: $0[0], count: 3) } ?? (size1D == nil ? minimum : [0.0, 0.0, 0.0])
+            let upper: [Double] = range3D.map { Array(repeating: $0[1], count: 3) } ?? (size1D == nil ? maximum : [1.0, 1.0, 1.0])
             operations.append(.lut(try lut(dimension: 3, size: size3D, values: Array(values[consumed...]), minimum: lower, maximum: upper)))
         } else if consumed != values.count { throw OCIOConfigError.invalid("extra cube entries") }
         return operations
@@ -151,6 +154,9 @@ extension OCIONativeCompiler {
             switch operation {
             case let .transform(transform): try append(OCIOConfigTransformStep(transform: transform, inverse: inverse, label: file.lastPathComponent), depth: depth + 1)
             case let .lut(lut): try appendLUT(lut, interpolation: p.string("interpolation", defaultValue: "default"), inverse: inverse)
+            case let .configuredLUT(lut, interpolation, reversed):
+                let selected = try p.string("interpolation", defaultValue: interpolation)
+                try appendLUT(lut, interpolation: selected == "default" ? interpolation : selected, inverse: reversed != inverse)
             }
         }
     }
@@ -159,8 +165,15 @@ extension OCIONativeCompiler {
         guard ["default", "best", "linear", "nearest", "tetrahedral"].contains(interpolation) else { throw OCIOConfigError.invalid("unknown LUT interpolation '\(interpolation)'") }
         if inverse && lut.dimension == 3 { throw OCIOConfigError.unavailableTransform("native inverse 3D LUT solving is not yet implemented") }
         let id = textures.count
-        textures.append(OCIONativeTexture(index: id, dimension: lut.dimension, width: lut.size, height: lut.dimension == 3 ? lut.size : 1, depth: lut.dimension == 3 ? lut.size : 1, channels: 3, values: lut.values))
+        // Metal 1D textures are limited to 16384 texels on supported Macs. Packing
+        // into rows supports OCIO's larger 1D/half-domain tables without resampling.
+        let width = lut.dimension == 1 ? min(lut.size, 4096) : lut.size
+        let height = lut.dimension == 1 ? (lut.size + width - 1) / width : lut.size
+        var textureValues = lut.values
+        if lut.dimension == 1 { textureValues += Array(repeating: 0, count: width * height * 3 - textureValues.count) }
+        textures.append(OCIONativeTexture(index: id, dimension: lut.dimension == 1 ? 2 : 3, width: width, height: height, depth: lut.dimension == 3 ? lut.size : 1, channels: 3, values: textureValues))
         let texture = "lut\(id)", size = Double(lut.size), last = Double(lut.size - 1)
+        func read(_ index: String) -> String { "\(texture).read(uint2((\(index)) % \(width)u, (\(index)) / \(width)u))" }
         let ranges = zip(lut.domainMinimum, lut.domainMaximum).map { $1 - $0 }
         var code = "{\n"
         if !inverse { code += "float3 normalized = (pixel.rgb - \(mslVector(lut.domainMinimum))) / \(mslVector(ranges));\n" }
@@ -176,16 +189,21 @@ extension OCIONativeCompiler {
                         uint low = 0u, high = \(lut.size - 1)u;
                         while (high - low > 1u) {
                             uint mid = (low + high) / 2u;
-                            if (\(texture).read(mid).\(component) \(increasing ? "<" : ">") target) low = mid; else high = mid;
+                            if (\(read("mid")).\(component) \(increasing ? "<" : ">") target) low = mid; else high = mid;
                         }
-                        float a = \(texture).read(low).\(component), b = \(texture).read(high).\(component);
+                        float a = \(read("low")).\(component), b = \(read("high")).\(component);
                         float fraction = a == b ? 0.0f : clamp((target - a) / (b - a), 0.0f, 1.0f);
                         pixel.\(component) = ((float(low) + fraction) / \(mslNumber(last))) * \(mslNumber(ranges[channel])) + \(mslNumber(lut.domainMinimum[channel]));
                     }
                     """
                 } else {
-                    let filtering = interpolation == "nearest" ? "nearest" : "linear"
-                    code += "{ constexpr sampler sampling(coord::normalized, address::clamp_to_edge, filter::\(filtering)); pixel.\(component) = \(texture).sample(sampling, (normalized.\(component) * \(mslNumber(last)) + 0.5f) / \(mslNumber(size))).\(component); }\n"
+                    code += "{ float position = clamp(normalized.\(component), 0.0f, 1.0f) * \(mslNumber(last));\n"
+                    if interpolation == "nearest" {
+                        code += "uint nearest = uint(floor(position + 0.5f)); pixel.\(component) = \(read("nearest")).\(component); }\n"
+                    } else {
+                        code += "uint low = uint(floor(position)); uint high = min(low + 1u, \(lut.size - 1)u);\n"
+                        code += "pixel.\(component) = mix(\(read("low")).\(component), \(read("high")).\(component), position - float(low)); }\n"
+                    }
                 }
             }
         } else if interpolation == "tetrahedral" || interpolation == "best" {
