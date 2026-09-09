@@ -844,7 +844,7 @@ extension FFJMhParameters {
     func luminanceToJ(_ luminance: Float) -> Float {
         let compressed = pow(abs(luminance) * luminanceScale, Float(0.42))
         let response = compressed / (27.13 + compressed)
-        let j = 100 * pow(response / whiteResponse, cz)
+        let j = 100 * pow(response * (1 / whiteResponse), cz)
         return luminance < 0 ? -j : j
     }
 

@@ -3077,6 +3077,1754 @@
           0.0
         ]
       ]
+    },
+    {
+      "name": "file-bit_depth_identity.clf-forward",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/bit_depth_identity.clf\"}\n",
+      "source": "Encoded",
+      "destination": "Linear",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          0.0,
+          0.0010000000474974513,
+          0.009999999776482582,
+          0.25
+        ],
+        [
+          0.10000000149011612,
+          0.30000001192092896,
+          0.6000000238418579,
+          0.5
+        ],
+        [
+          0.4000000059604645,
+          0.5,
+          0.800000011920929,
+          1.0
+        ]
+      ]
+    },
+    {
+      "name": "file-bit_depth_identity.clf-inverse",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/bit_depth_identity.clf\"}\n",
+      "source": "Linear",
+      "destination": "Encoded",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          0.0,
+          0.0010000000474974513,
+          0.009999999776482582,
+          0.25
+        ],
+        [
+          0.10000000149011612,
+          0.30000001192092896,
+          0.6000000238418579,
+          0.5
+        ],
+        [
+          0.4000000059604645,
+          0.5,
+          0.800000011920929,
+          1.0
+        ]
+      ]
+    },
+    {
+      "name": "file-cdl_various.ctf-forward",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/cdl_various.ctf\"}\n",
+      "source": "Encoded",
+      "destination": "Linear",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          0.019999999552965164,
+          0.0009999872418120503,
+          0.010003633797168732,
+          0.25
+        ],
+        [
+          0.10000063478946686,
+          0.30000558495521545,
+          0.6000027656555176,
+          0.5
+        ],
+        [
+          0.3999929130077362,
+          0.5000089406967163,
+          0.7999885082244873,
+          1.0
+        ]
+      ]
+    },
+    {
+      "name": "file-cdl_various.ctf-inverse",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/cdl_various.ctf\"}\n",
+      "source": "Linear",
+      "destination": "Encoded",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          0.019999999552965164,
+          0.0009999872418120503,
+          0.010003633797168732,
+          0.25
+        ],
+        [
+          0.10000063478946686,
+          0.30000558495521545,
+          0.6000027656555176,
+          0.5
+        ],
+        [
+          0.3999929130077362,
+          0.5000089406967163,
+          0.7999885082244873,
+          1.0
+        ]
+      ]
+    },
+    {
+      "name": "file-exposure_contrast_linear.ctf-forward",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/exposure_contrast_linear.ctf\"}\n",
+      "source": "Encoded",
+      "destination": "Linear",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          0.0,
+          0.001000004238449037,
+          0.01000014878809452,
+          0.25
+        ],
+        [
+          0.10000203549861908,
+          0.30000415444374084,
+          0.5999915599822998,
+          0.5
+        ],
+        [
+          0.3999977707862854,
+          0.5000050067901611,
+          0.8000124096870422,
+          1.0
+        ]
+      ]
+    },
+    {
+      "name": "file-exposure_contrast_linear.ctf-inverse",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/exposure_contrast_linear.ctf\"}\n",
+      "source": "Linear",
+      "destination": "Encoded",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          0.0,
+          0.001000004238449037,
+          0.01000014878809452,
+          0.25
+        ],
+        [
+          0.10000203549861908,
+          0.30000415444374084,
+          0.5999915599822998,
+          0.5
+        ],
+        [
+          0.3999977707862854,
+          0.5000050067901611,
+          0.8000124096870422,
+          1.0
+        ]
+      ]
+    },
+    {
+      "name": "file-exposure_contrast_log.ctf-forward",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/exposure_contrast_log.ctf\"}\n",
+      "source": "Encoded",
+      "destination": "Linear",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          -2.9802322387695312e-08,
+          0.0009999871253967285,
+          0.009999975562095642,
+          0.25
+        ],
+        [
+          0.09999996423721313,
+          0.29999998211860657,
+          0.6000000238418579,
+          0.5
+        ],
+        [
+          0.4000000059604645,
+          0.4999999701976776,
+          0.8000000715255737,
+          1.0
+        ]
+      ]
+    },
+    {
+      "name": "file-exposure_contrast_log.ctf-inverse",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/exposure_contrast_log.ctf\"}\n",
+      "source": "Linear",
+      "destination": "Encoded",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          -2.9802322387695312e-08,
+          0.0009999871253967285,
+          0.009999975562095642,
+          0.25
+        ],
+        [
+          0.09999996423721313,
+          0.29999998211860657,
+          0.6000000238418579,
+          0.5
+        ],
+        [
+          0.4000000059604645,
+          0.4999999701976776,
+          0.8000000715255737,
+          1.0
+        ]
+      ]
+    },
+    {
+      "name": "file-exposure_contrast_video.ctf-forward",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/exposure_contrast_video.ctf\"}\n",
+      "source": "Encoded",
+      "destination": "Linear",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          0.0,
+          2.165209843951743e-05,
+          0.0006847103941254318,
+          0.25
+        ],
+        [
+          0.021652232855558395,
+          0.1125098466873169,
+          0.318226158618927,
+          0.5
+        ],
+        [
+          0.17321784794330597,
+          0.242082417011261,
+          0.4899332523345947,
+          1.0
+        ]
+      ]
+    },
+    {
+      "name": "file-exposure_contrast_video.ctf-inverse",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/exposure_contrast_video.ctf\"}\n",
+      "source": "Linear",
+      "destination": "Encoded",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          0.0,
+          0.012872468680143356,
+          0.059749066829681396,
+          0.25
+        ],
+        [
+          0.2773314416408539,
+          0.5768751502037048,
+          0.9157339334487915,
+          0.5
+        ],
+        [
+          0.698832094669342,
+          0.8109142780303955,
+          1.1093257665634155,
+          1.0
+        ]
+      ]
+    },
+    {
+      "name": "file-fixed_function.ctf-forward",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/fixed_function.ctf\"}\n",
+      "source": "Encoded",
+      "destination": "Linear",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          0.0379464253783226,
+          0.03780243173241615,
+          0.03780243173241615,
+          0.25
+        ],
+        [
+          0.7823843955993652,
+          0.7157803773880005,
+          0.4763217270374298,
+          0.5
+        ],
+        [
+          0.39068102836608887,
+          0.9221078753471375,
+          0.7979259490966797,
+          1.0
+        ]
+      ]
+    },
+    {
+      "name": "file-fixed_function.ctf-inverse",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/fixed_function.ctf\"}\n",
+      "source": "Linear",
+      "destination": "Encoded",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          0.6240003108978271,
+          0.9600003957748413,
+          0.009600004181265831,
+          0.25
+        ],
+        [
+          0.5598828792572021,
+          0.7776150703430176,
+          0.5598828792572021,
+          0.5
+        ],
+        [
+          0.538386881351471,
+          0.43070951104164124,
+          0.6891352534294128,
+          1.0
+        ]
+      ]
+    },
+    {
+      "name": "file-gamma_alpha_test1.ctf-forward",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/gamma_alpha_test1.ctf\"}\n",
+      "source": "Encoded",
+      "destination": "Linear",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          0.0,
+          6.309504385626497e-08,
+          1.5849156625336036e-05,
+          0.2500028908252716
+        ],
+        [
+          0.003981065470725298,
+          0.05560322105884552,
+          0.2934754490852356,
+          0.5000057816505432
+        ],
+        [
+          0.11090321838855743,
+          0.1894681602716446,
+          0.5853505730628967,
+          1.0000115633010864
+        ]
+      ]
+    },
+    {
+      "name": "file-gamma_alpha_test1.ctf-inverse",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/gamma_alpha_test1.ctf\"}\n",
+      "source": "Linear",
+      "destination": "Encoded",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          0.0,
+          0.05623417720198631,
+          0.1467805802822113,
+          0.2500028908252716
+        ],
+        [
+          0.38311767578125,
+          0.605530858039856,
+          0.8082832098007202,
+          0.5000057816505432
+        ],
+        [
+          0.6826401948928833,
+          0.7491546273231506,
+          0.9112169742584229,
+          1.0000115633010864
+        ]
+      ]
+    },
+    {
+      "name": "file-gamma_alpha_test2.ctf-forward",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/gamma_alpha_test2.ctf\"}\n",
+      "source": "Encoded",
+      "destination": "Linear",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          0.0,
+          0.05289364233613014,
+          0.12328498065471649,
+          0.57435142993927
+        ],
+        [
+          0.38311767578125,
+          0.5991019606590271,
+          0.7927936911582947,
+          0.7578591108322144
+        ],
+        [
+          0.6826401948928833,
+          0.7445653676986694,
+          0.9035472273826599,
+          1.0000061988830566
+        ]
+      ]
+    },
+    {
+      "name": "file-gamma_alpha_test2.ctf-inverse",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/gamma_alpha_test2.ctf\"}\n",
+      "source": "Linear",
+      "destination": "Encoded",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          0.0,
+          8.912425641938171e-08,
+          3.9811402530176565e-05,
+          0.03125078231096268
+        ],
+        [
+          0.003981065470725298,
+          0.05905327945947647,
+          0.32504329085350037,
+          0.17678052186965942
+        ],
+        [
+          0.11090321838855743,
+          0.19614966213703156,
+          0.6120665073394775,
+          1.0000249147415161
+        ]
+      ]
+    },
+    {
+      "name": "file-gamma_alpha_test3.ctf-forward",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/gamma_alpha_test3.ctf\"}\n",
+      "source": "Encoded",
+      "destination": "Linear",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          0.0,
+          0.00022154352336656302,
+          0.002215435029938817,
+          0.25
+        ],
+        [
+          0.022427521646022797,
+          0.10523471236228943,
+          0.3658425807952881,
+          0.5
+        ],
+        [
+          0.17298546433448792,
+          0.2595851719379425,
+          0.6399441957473755,
+          1.0
+        ]
+      ]
+    },
+    {
+      "name": "file-gamma_alpha_test3.ctf-inverse",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/gamma_alpha_test3.ctf\"}\n",
+      "source": "Linear",
+      "destination": "Encoded",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          0.0,
+          0.004513786640018225,
+          0.04513786360621452,
+          0.25
+        ],
+        [
+          0.2909395098686218,
+          0.5402993559837341,
+          0.7743056416511536,
+          0.5
+        ],
+        [
+          0.6286546587944031,
+          0.7055168747901917,
+          0.8950061798095703,
+          1.0
+        ]
+      ]
+    },
+    {
+      "name": "file-icc-test-1.icc-forward",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/icc-test-1.icc\"}\n",
+      "source": "Encoded",
+      "destination": "Linear",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          -0.08132889866828918,
+          0.06304097920656204,
+          0.12337920069694519,
+          0.2500028908252716
+        ],
+        [
+          -0.44936418533325195,
+          0.7235177159309387,
+          0.7774918675422668,
+          0.5000057816505432
+        ],
+        [
+          0.540411651134491,
+          0.782755970954895,
+          0.8817958235740662,
+          1.0000115633010864
+        ]
+      ]
+    },
+    {
+      "name": "file-icc-test-1.icc-inverse",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/icc-test-1.icc\"}\n",
+      "source": "Linear",
+      "destination": "Encoded",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          7.567552984255599e-06,
+          3.1669269446865655e-06,
+          3.962753544328734e-05,
+          0.2500028908252716
+        ],
+        [
+          0.07799136638641357,
+          0.0707862377166748,
+          0.3275391459465027,
+          0.5000057816505432
+        ],
+        [
+          0.2325083464384079,
+          0.22234567999839783,
+          0.6258795261383057,
+          1.0000115633010864
+        ]
+      ]
+    },
+    {
+      "name": "file-icc-test-2.pf-forward",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/icc-test-2.pf\"}\n",
+      "source": "Encoded",
+      "destination": "Linear",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          -0.08898412436246872,
+          0.06276139616966248,
+          0.1214289665222168,
+          0.2500028908252716
+        ],
+        [
+          -0.5879566669464111,
+          0.7288886308670044,
+          0.7746360301971436,
+          0.5000057816505432
+        ],
+        [
+          0.46757203340530396,
+          0.7844871282577515,
+          0.8821800947189331,
+          1.0000115633010864
+        ]
+      ]
+    },
+    {
+      "name": "file-icc-test-2.pf-inverse",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/icc-test-2.pf\"}\n",
+      "source": "Linear",
+      "destination": "Encoded",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          7.741409717709757e-06,
+          3.0977860205894103e-06,
+          4.329605508246459e-05,
+          0.2500028908252716
+        ],
+        [
+          0.08145414292812347,
+          0.0727071464061737,
+          0.325235515832901,
+          0.5000057816505432
+        ],
+        [
+          0.23715326189994812,
+          0.22540131211280823,
+          0.6193541884422302,
+          1.0000115633010864
+        ]
+      ]
+    },
+    {
+      "name": "file-icc-test-3.icm-forward",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/icc-test-3.icm\"}\n",
+      "source": "Encoded",
+      "destination": "Linear",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          0.0,
+          0.029558999463915825,
+          0.10216306895017624,
+          0.25
+        ],
+        [
+          0.0,
+          0.7292960286140442,
+          0.7848009467124939,
+          0.5
+        ],
+        [
+          0.39403703808784485,
+          0.787945568561554,
+          0.8888981342315674,
+          1.0
+        ]
+      ]
+    },
+    {
+      "name": "file-icc-test-3.icm-inverse",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/icc-test-3.icm\"}\n",
+      "source": "Linear",
+      "destination": "Encoded",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          0.00016880282782949507,
+          0.00011216338316444308,
+          0.0007513935561291873,
+          0.25
+        ],
+        [
+          0.08782864362001419,
+          0.07750563323497772,
+          0.31179580092430115,
+          0.5
+        ],
+        [
+          0.2403431385755539,
+          0.2249184548854828,
+          0.6021928787231445,
+          1.0
+        ]
+      ]
+    },
+    {
+      "name": "file-icc-test-pc1.icc-forward",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/icc-test-pc1.icc\"}\n",
+      "source": "Encoded",
+      "destination": "Linear",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          0.09090909361839294,
+          0.16313649713993073,
+          0.22634413838386536,
+          0.25
+        ],
+        [
+          0.09090909361839294,
+          0.7667359709739685,
+          0.8145619630813599,
+          0.5
+        ],
+        [
+          0.4778496026992798,
+          0.8172754645347595,
+          0.9042627811431885,
+          1.0
+        ]
+      ]
+    },
+    {
+      "name": "file-icc-test-pc1.icc-inverse",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/icc-test-pc1.icc\"}\n",
+      "source": "Linear",
+      "destination": "Encoded",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          0.0,
+          0.0,
+          0.0,
+          0.25
+        ],
+        [
+          0.05540630221366882,
+          0.03897145390510559,
+          0.23994967341423035,
+          0.5
+        ],
+        [
+          0.1830163449048996,
+          0.16095218062400818,
+          0.5427238941192627,
+          1.0
+        ]
+      ]
+    },
+    {
+      "name": "file-icc-test-pc2.icc-forward",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/icc-test-pc2.icc\"}\n",
+      "source": "Encoded",
+      "destination": "Linear",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          0.09481915831565857,
+          0.09481915831565857,
+          0.09481915831565857,
+          0.25
+        ],
+        [
+          0.09481915831565857,
+          0.7342007160186768,
+          0.7903906106948853,
+          0.5
+        ],
+        [
+          0.31013911962509155,
+          0.79354327917099,
+          0.8930543661117554,
+          1.0
+        ]
+      ]
+    },
+    {
+      "name": "file-icc-test-pc2.icc-inverse",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/icc-test-pc2.icc\"}\n",
+      "source": "Linear",
+      "destination": "Encoded",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          0.09506001323461533,
+          0.1000032126903534,
+          0.10893898457288742,
+          0.25
+        ],
+        [
+          0.14430385828018188,
+          0.134336918592453,
+          0.3231559097766876,
+          0.5
+        ],
+        [
+          0.258434921503067,
+          0.2433592528104782,
+          0.595873236656189,
+          1.0
+        ]
+      ]
+    },
+    {
+      "name": "file-icc-test-pc3.icc-forward",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/icc-test-pc3.icc\"}\n",
+      "source": "Encoded",
+      "destination": "Linear",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          0.0,
+          0.029612887650728226,
+          0.10216151922941208,
+          0.25
+        ],
+        [
+          0.0,
+          0.7292938828468323,
+          0.7847965359687805,
+          0.5
+        ],
+        [
+          0.39403700828552246,
+          0.7879456281661987,
+          0.8888954520225525,
+          1.0
+        ]
+      ]
+    },
+    {
+      "name": "file-icc-test-pc3.icc-inverse",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/icc-test-pc3.icc\"}\n",
+      "source": "Linear",
+      "destination": "Encoded",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          0.000167381193023175,
+          0.00011121876741526648,
+          0.0007450654520653188,
+          0.25
+        ],
+        [
+          0.08782947808504105,
+          0.07750687003135681,
+          0.31179964542388916,
+          0.5
+        ],
+        [
+          0.24034401774406433,
+          0.22491849958896637,
+          0.6021992564201355,
+          1.0
+        ]
+      ]
+    },
+    {
+      "name": "file-icc-test-pc4.icc-forward",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/icc-test-pc4.icc\"}\n",
+      "source": "Encoded",
+      "destination": "Linear",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          0.0,
+          0.0,
+          0.0,
+          0.25
+        ],
+        [
+          0.0,
+          0.6894991397857666,
+          0.7551355957984924,
+          0.5
+        ],
+        [
+          0.19414708018302917,
+          0.7588182687759399,
+          0.8750585913658142,
+          1.0
+        ]
+      ]
+    },
+    {
+      "name": "file-icc-test-pc4.icc-inverse",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/icc-test-pc4.icc\"}\n",
+      "source": "Linear",
+      "destination": "Encoded",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          0.09524719417095184,
+          0.1001388356089592,
+          0.1096763014793396,
+          0.25
+        ],
+        [
+          0.17470188438892365,
+          0.17045560479164124,
+          0.39065253734588623,
+          0.5
+        ],
+        [
+          0.31226661801338196,
+          0.3034259080886841,
+          0.6517922878265381,
+          1.0
+        ]
+      ]
+    },
+    {
+      "name": "file-log_lintolog_3chan.ctf-forward",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/log_lintolog_3chan.ctf\"}\n",
+      "source": "Encoded",
+      "destination": "Linear",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          -8.603561401367188,
+          0.07332295179367065,
+          0.14915966987609863,
+          0.25
+        ],
+        [
+          0.43209022283554077,
+          0.5158280730247498,
+          0.6284545660018921,
+          0.5
+        ],
+        [
+          0.5795611143112183,
+          0.5794647932052612,
+          0.6676454544067383,
+          1.0
+        ]
+      ]
+    },
+    {
+      "name": "file-log_lintolog_3chan.ctf-inverse",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/log_lintolog_3chan.ctf\"}\n",
+      "source": "Linear",
+      "destination": "Encoded",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          0.0021242410875856876,
+          -0.0031413889955729246,
+          -0.001989959506317973,
+          0.25
+        ],
+        [
+          0.004783357959240675,
+          0.0481133833527565,
+          0.48652949929237366,
+          0.5
+        ],
+        [
+          0.07401905953884125,
+          0.2639414966106415,
+          2.102168560028076,
+          1.0
+        ]
+      ]
+    },
+    {
+      "name": "file-log_logtolin.ctf-forward",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/log_logtolin.ctf\"}\n",
+      "source": "Encoded",
+      "destination": "Linear",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          -0.0051479884423315525,
+          -0.005106509663164616,
+          -0.004718173760920763,
+          0.25
+        ],
+        [
+          0.0011287217494100332,
+          0.04507346451282501,
+          0.5746018290519714,
+          0.5
+        ],
+        [
+          0.11125466972589493,
+          0.2563759684562683,
+          2.8025548458099365,
+          1.0
+        ]
+      ]
+    },
+    {
+      "name": "file-log_logtolin.ctf-inverse",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/log_logtolin.ctf\"}\n",
+      "source": "Linear",
+      "destination": "Encoded",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          0.08688986301422119,
+          0.09857004880905151,
+          0.1726347804069519,
+          0.25
+        ],
+        [
+          0.3876388370990753,
+          0.5192890167236328,
+          0.6054138541221619,
+          0.5
+        ],
+        [
+          0.5548547506332397,
+          0.582626461982727,
+          0.6415075063705444,
+          1.0
+        ]
+      ]
+    },
+    {
+      "name": "file-log_logtolinv2.ctf-forward",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/log_logtolinv2.ctf\"}\n",
+      "source": "Encoded",
+      "destination": "Linear",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          -0.0051479884423315525,
+          -0.005106509663164616,
+          -0.004718173760920763,
+          0.25
+        ],
+        [
+          0.0011287217494100332,
+          0.04507346451282501,
+          0.5746018290519714,
+          0.5
+        ],
+        [
+          0.11125466972589493,
+          0.2563759684562683,
+          2.8025548458099365,
+          1.0
+        ]
+      ]
+    },
+    {
+      "name": "file-log_logtolinv2.ctf-inverse",
+      "yaml": "ocio_profile_version: 2.5\nenvironment: {}\nroles: {default: Linear}\ncolorspaces:\n  - !<ColorSpace> {name: Linear}\n  - !<ColorSpace>\n    name: Encoded\n    to_scene_reference: !<FileTransform> {src: \"NativeFiles/log_logtolinv2.ctf\"}\n",
+      "source": "Linear",
+      "destination": "Encoded",
+      "input": [
+        [
+          0.0,
+          0.001,
+          0.01,
+          0.25
+        ],
+        [
+          0.1,
+          0.3,
+          0.6,
+          0.5
+        ],
+        [
+          0.4,
+          0.5,
+          0.8,
+          1.0
+        ]
+      ],
+      "expected": [
+        [
+          0.08688986301422119,
+          0.09857004880905151,
+          0.1726347804069519,
+          0.25
+        ],
+        [
+          0.3876388370990753,
+          0.5192890167236328,
+          0.6054138541221619,
+          0.5
+        ],
+        [
+          0.5548547506332397,
+          0.582626461982727,
+          0.6415075063705444,
+          1.0
+        ]
+      ]
     }
   ]
 }

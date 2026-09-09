@@ -1,5 +1,14 @@
 #if canImport(Metal)
 extension MetalColorEngine {
+    /// Applies a named custom Look to pixels encoded in that Look's declared process space.
+    public func nativeLookProcessor(configuration: OCIOConfigDocument, name: String,
+                                    direction: TransformDirection = .forward) throws -> ColorProcessor {
+        guard let look = configuration.looks.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else {
+            throw OCIOConfigError.unavailableTransform("unknown look '\(name)'")
+        }
+        let plan = try configuration.lookSteps(from: look.processSpace, selected: [(look, false)], inverse: direction == .inverse)
+        return try nativeProcessor(stages: configuration.nativeStages(steps: plan.steps))
+    }
     /// Loads a parsed user configuration into native Float32 Metal stages, including archived builtin transforms.
     public func nativeProcessor(configuration: OCIOConfigDocument, source: String, destination: String,
                                 dataBypass: Bool = true) throws -> ColorProcessor {

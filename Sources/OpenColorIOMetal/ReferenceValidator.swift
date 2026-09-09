@@ -82,7 +82,7 @@ public struct ReferenceValidator: Sendable {
     /// A missing GPU or compilation/execution error throws; numerical mismatches return a failing report.
     public func validate(using engine: MetalColorEngine,
                          progress: (@Sendable (Int, Int) -> Void)? = nil) throws -> ValidationReport {
-        guard engine.catalogue.rootURL == catalogue.rootURL else {
+        guard engine.catalogue?.rootURL == catalogue.rootURL else {
             throw OCIOError.invalidInput("validator and engine must use the same archive")
         }
         var computed: [[String]: [Float]] = [:]

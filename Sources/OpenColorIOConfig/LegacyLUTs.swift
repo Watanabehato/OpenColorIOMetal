@@ -11,11 +11,16 @@ extension OCIOLUTFile {
         case "cub": return try truelight(source)
         case "vf": return try nukeVF(source)
         case "csp": return try cineSpace(source)
+        case "look": return try iridasLook(source)
+        case "lut":
+            if rows(source).first?.first?.lowercased() == "version" { return try houdini(source) }
+            return try discreet(source, filename: filename)
         default: throw OCIOConfigError.unavailableTransform("native file format '.\(ext)' is not implemented")
         }
     }
 
     static func cubeEdge(_ count: Int) throws -> Int {
+        guard count >= 8, count <= 129 * 129 * 129 else { throw OCIOConfigError.invalid("3D LUT entry count is outside the supported range") }
         let edge = Int(Double(count).cubeRoot().rounded())
         guard edge >= 2, edge <= 129, edge * edge * edge == count else {
             throw OCIOConfigError.invalid("3D LUT entry count must form a cube with edge 2...129")
@@ -223,6 +228,145 @@ extension OCIOLUTFile {
             return [f0, derivative0, -3 * f0 - 2 * derivative0 + 3 * f1 - derivative1,
                     2 * f0 + derivative0 - 2 * f1 + derivative1]
         }
+    }
+
+    public static func iridasLook(_ source: String) throws -> [OCIONativeFileOperation] {
+        let root = try NativeXMLReader.parse(source)
+        guard root.name.lowercased() == "look",
+              let node = root.children.first(where: { $0.name.lowercased() == "lut" }),
+              let sizeNode = node.children.first(where: { $0.name.lowercased() == "size" }),
+              let dataNode = node.children.first(where: { $0.name.lowercased() == "data" }) else {
+            throw OCIOConfigError.invalid("Iridas Look needs Look/LUT/Size and Data")
+        }
+        let edge = try size(sizeNode.text.filter { !$0.isWhitespace && $0 != "\"" }, maximum: 129)
+        let hex = Array(dataNode.text.filter { !$0.isWhitespace && $0 != "\"" }.utf8)
+        guard hex.count == edge * edge * edge * 3 * 8 else { throw OCIOConfigError.invalid("Iridas Look hexadecimal LUT length differs from size") }
+        func nibble(_ byte: UInt8) throws -> UInt32 {
+            switch byte {
+            case 48...57: return UInt32(byte - 48)
+            case 65...70: return UInt32(byte - 55)
+            case 97...102: return UInt32(byte - 87)
+            default: throw OCIOConfigError.invalid("invalid Iridas Look hexadecimal character")
+            }
+        }
+        var values: [Float] = []
+        values.reserveCapacity(hex.count / 8)
+        for offset in stride(from: 0, to: hex.count, by: 8) {
+            var bits: UInt32 = 0
+            for byte in 0..<4 {
+                let hi = try nibble(hex[offset + byte * 2]), lo = try nibble(hex[offset + byte * 2 + 1])
+                bits |= (hi * 16 + lo) << (byte * 8)
+            }
+            values.append(Float(bitPattern: bits))
+        }
+        return [.lut(try lut(dimension: 3, size: edge, values: values))]
+    }
+
+    public static func houdini(_ source: String) throws -> [OCIONativeFileOperation] {
+        let lines = rows(source)
+        guard let marker = lines.firstIndex(where: { $0[0].lowercased() == "lut:" }) else { throw OCIOConfigError.invalid("Houdini LUT: marker missing") }
+        var headers: [String: [String]] = [:]
+        for row in lines[..<marker] { headers[row[0].lowercased()] = Array(row.dropFirst()) }
+        func header(_ name: String, count: Int) throws -> [String] {
+            guard let value = headers[name], value.count == count else { throw OCIOConfigError.invalid("invalid Houdini \(name) header") }
+            return value
+        }
+        _ = try header("version", count: 1)
+        _ = try header("format", count: 1)
+        let type = try header("type", count: 1)[0].lowercased()
+        guard ["c", "3d", "3d+1d"].contains(type) else { throw OCIOConfigError.invalid("unsupported Houdini type \(type)") }
+        let from = try numbers(header("from", count: 2), count: 2)
+        _ = try numbers(header("to", count: 2), count: 2)
+        _ = try numbers(header("black", count: 1), count: 1)
+        _ = try numbers(header("white", count: 1), count: 1)
+        let sizes = try header("length", count: type == "3d+1d" ? 2 : 1)
+        let edge = try size(sizes[0], maximum: type == "c" ? 1_048_576 : 129)
+        let tokens = lines.dropFirst(marker + 1).joined().joined(separator: " ")
+            .replacingOccurrences(of: "{", with: " { ").replacingOccurrences(of: "}", with: " } ")
+            .split(whereSeparator: \.isWhitespace).map(String.init)
+        var blocks: [String: [Float]] = [:], cursor = 0
+        while cursor < tokens.count {
+            let name: String
+            if tokens[cursor] == "{" { name = "3d"; cursor += 1 }
+            else {
+                name = tokens[cursor].lowercased(); cursor += 1
+                guard cursor < tokens.count, tokens[cursor] == "{" else { throw OCIOConfigError.invalid("Houdini block missing opening brace") }
+                cursor += 1
+            }
+            guard blocks[name] == nil else { throw OCIOConfigError.invalid("duplicate Houdini LUT block") }
+            var data: [Float] = []
+            while cursor < tokens.count, tokens[cursor] != "}" {
+                data.append(Float(try numbers([tokens[cursor]], count: 1)[0])); cursor += 1
+            }
+            guard cursor < tokens.count else { throw OCIOConfigError.invalid("Houdini block missing closing brace") }
+            cursor += 1; blocks[name] = data
+        }
+        var operations: [OCIONativeFileOperation] = []
+        if type == "c" || type == "3d+1d" {
+            let key = type == "c" ? "rgb" : "pre"
+            let count = type == "c" ? edge : try size(sizes[1], maximum: 1_048_576)
+            guard let values = blocks[key], values.count == count else { throw OCIOConfigError.invalid("Houdini \(key) block entry count mismatch") }
+            operations.append(.lut(try lut(dimension: 1, size: count,
+                values: values.flatMap { [$0, $0, $0] },
+                minimum: Array(repeating: from[0], count: 3), maximum: Array(repeating: from[1], count: 3))))
+        }
+        if type != "c" {
+            guard let values = blocks["3d"] else { throw OCIOConfigError.invalid("Houdini 3D block missing") }
+            // Upstream ignores From/To for a standalone 3D Houdini LUT.
+            operations.append(.lut(try lut(dimension: 3, size: edge, values: values)))
+        }
+        return operations
+    }
+
+    public static func discreet(_ source: String, filename: String) throws -> [OCIONativeFileOperation] {
+        let lines = rows(source)
+        guard let first = lines.first else { throw OCIOConfigError.invalid("empty Discreet LUT") }
+        var count = 256, tables = 1, start = 0, outputCount: Int?, outputHalf = false
+        if first[0].lowercased() == "lut:" {
+            guard (3...4).contains(first.count), let n = Int(first[1]), [1, 3, 4].contains(n),
+                  let length = Int(first[2]), length >= 2, length <= 65536 else { throw OCIOConfigError.invalid("invalid Discreet LUT header") }
+            count = length; tables = n; start = 1
+            if first.count == 4 {
+                outputHalf = first[3].lowercased().hasSuffix("f")
+                let text = outputHalf ? String(first[3].dropLast()) : first[3]
+                guard let value = Int(text), [256, 1024, 4096, 65536].contains(value) else { throw OCIOConfigError.invalid("invalid Discreet output depth") }
+                outputCount = value
+            }
+        } else if first.count != 1 || Int(first[0]) == nil { throw OCIOConfigError.invalid("not a Discreet LUT file") }
+        if outputCount == nil, let range = filename.lowercased().range(of: "to") {
+            let suffix = filename.lowercased()[range.upperBound...]
+            if suffix.hasPrefix("16f") { outputCount = 65536; outputHalf = true }
+            else {
+                for (label, value) in [("8", 256), ("10", 1024), ("12", 4096), ("16", 65536)] where suffix.hasPrefix(label) { outputCount = value; break }
+            }
+        }
+        let scale = Float((outputCount ?? ([256, 1024, 4096, 65536].contains(count) ? count : 2)) - 1)
+        let tokens = lines.dropFirst(start).flatMap { $0 }
+        guard tokens.count == count * tables else { throw OCIOConfigError.invalid("Discreet LUT entry count mismatch") }
+        let raw = try tokens.map { text -> UInt16 in
+            guard let value = Int(text) else { throw OCIOConfigError.invalid("Discreet LUT requires integer words") }
+            return UInt16(truncatingIfNeeded: value)
+        }
+        var values: [Float] = []
+        values.reserveCapacity(count * 3)
+        for index in 0..<count { for channel in 0..<3 {
+            let word = raw[(tables == 1 ? 0 : channel) * count + index]
+            values.append(outputHalf ? halfValue(word) : Float(word) / scale)
+        } }
+        return [.lut(try lut(dimension: 1, size: count, values: values, halfDomain: count == 65536))]
+    }
+
+    static func halfValue(_ bits: UInt16) -> Float {
+        let sign = UInt32(bits & 0x8000) << 16
+        let exponent = UInt32((bits >> 10) & 31), fraction = UInt32(bits & 1023)
+        if exponent == 31 { return Float(bitPattern: sign | 0x7f800000 | fraction << 13) }
+        if exponent == 0 {
+            if fraction == 0 { return Float(bitPattern: sign) }
+            var mantissa = fraction, power: UInt32 = 113
+            while mantissa & 1024 == 0 { mantissa <<= 1; power -= 1 }
+            return Float(bitPattern: sign | power << 23 | (mantissa & 1023) << 13)
+        }
+        return Float(bitPattern: sign | (exponent + 112) << 23 | fraction << 13)
     }
 }
 

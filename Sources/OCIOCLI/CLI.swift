@@ -63,6 +63,10 @@ struct OCIOCLI {
             """)
             return
         }
+        if let path = args.values["--ocio"], ["convert", "display", "named", "look"].contains(args.command) {
+            try runNative(args, path: path)
+            return
+        }
         let catalogue = try args.values["--archive"].map {
             try OCIOCatalogue(contentsOf: URL(fileURLWithPath: $0, isDirectory: true))
         } ?? OCIOCatalogue.bundled()
@@ -141,19 +145,48 @@ struct OCIOCLI {
             }
             let input = try pixels(args)
             let result = try processor.processRGBA(input)
-            if args.flags.contains("--binary") {
-                var data = Data(capacity: result.count * 4)
-                for value in result {
-                    var bits = value.bitPattern.littleEndian
-                    withUnsafeBytes(of: &bits) { data.append(contentsOf: $0) }
-                }
-                if let path = args.values["--output"] { try data.write(to: URL(fileURLWithPath: path), options: .atomic) }
-                else { FileHandle.standardOutput.write(data) }
-            } else {
-                try printJSON(result)
-            }
+            try writePixels(result, arguments: args)
         default: throw OCIOError.invalidInput("Unknown command: \(args.command). Use help.")
         }
+    }
+
+    private static func runNative(_ args: Arguments, path: String) throws {
+        let configuration = try OCIOConfigDocument(contentsOf: URL(fileURLWithPath: path))
+        let engine: MetalColorEngine
+        if let archive = args.values["--archive"] {
+            engine = try MetalColorEngine(catalogue: OCIOCatalogue(contentsOf: URL(fileURLWithPath: archive)))
+        } else {
+            do { engine = try MetalColorEngine(catalogue: OCIOCatalogue.bundled()) }
+            catch OCIOError.missingResource { engine = try MetalColorEngine() }
+        }
+        let inverse = args.flags.contains("--inverse")
+        let processor: ColorProcessor
+        switch args.command {
+        case "named":
+            let steps = try configuration.namedTransformPlan(args.required("--name"), direction: inverse ? .inverse : .forward)
+            processor = try engine.nativeProcessor(stages: configuration.nativeStages(steps: steps))
+        case "look":
+            processor = try engine.nativeLookProcessor(configuration: configuration,
+                name: args.required("--name"), direction: inverse ? .inverse : .forward)
+        case "display":
+            processor = try engine.nativeDisplayProcessor(configuration: configuration, source: args.required("--src"),
+                display: args.required("--display"), view: args.required("--view"), direction: inverse ? .inverse : .forward)
+        default:
+            processor = try engine.nativeProcessor(configuration: configuration, source: args.required("--src"), destination: args.required("--dst"))
+        }
+        try writePixels(processor.processRGBA(pixels(args)), arguments: args)
+    }
+
+    private static func writePixels(_ result: [Float], arguments args: Arguments) throws {
+        if args.flags.contains("--binary") {
+            var data = Data(capacity: result.count * 4)
+            for value in result {
+                var bits = value.bitPattern.littleEndian
+                withUnsafeBytes(of: &bits) { data.append(contentsOf: $0) }
+            }
+            if let path = args.values["--output"] { try data.write(to: URL(fileURLWithPath: path), options: .atomic) }
+            else { FileHandle.standardOutput.write(data) }
+        } else { try printJSON(result) }
     }
 
     private static func pixels(_ args: Arguments) throws -> [Float] {

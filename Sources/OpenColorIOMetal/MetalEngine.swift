@@ -36,7 +36,7 @@ public struct MetalTextureBinding: Sendable {
 
 /// Thread-safe compiler/cache for immutable color processors. Metal performs every color operation.
 public final class MetalColorEngine: @unchecked Sendable {
-    public let catalogue: OCIOCatalogue
+    public let catalogue: OCIOCatalogue?
     public let device: any MTLDevice
     private let queue: any MTLCommandQueue
     private let cacheLock = NSLock()
@@ -44,24 +44,33 @@ public final class MetalColorEngine: @unchecked Sendable {
     private var cacheOrder: [String] = []
     private let cacheCapacity: Int
 
-    public init(catalogue: OCIOCatalogue, device: (any MTLDevice)? = nil, cacheCapacity: Int = 128) throws {
+    public convenience init(catalogue: OCIOCatalogue, device: (any MTLDevice)? = nil, cacheCapacity: Int = 128) throws {
+        try self.init(archive: catalogue, device: device, cacheCapacity: cacheCapacity)
+    }
+
+    /// Creates a standalone native compiler. Loading an archive is only required to resolve registered transforms.
+    public convenience init(device: (any MTLDevice)? = nil, cacheCapacity: Int = 128) throws {
+        try self.init(archive: nil, device: device, cacheCapacity: cacheCapacity)
+    }
+
+    private init(archive: OCIOCatalogue?, device: (any MTLDevice)?, cacheCapacity: Int) throws {
         guard let selectedDevice = device ?? MTLCreateSystemDefaultDevice() else { throw OCIOError.metalUnavailable }
         guard let queue = selectedDevice.makeCommandQueue() else { throw OCIOError.metalFailure("cannot allocate command queue") }
-        self.catalogue = catalogue
+        self.catalogue = archive
         self.device = selectedDevice
         self.queue = queue
         self.cacheCapacity = max(0, cacheCapacity)
     }
 
     public func processor(configuration: String? = nil, source: String, destination: String) throws -> ColorProcessor {
-        let config = try catalogue.configuration(configuration)
+        let config = try requireCatalogue().configuration(configuration)
         let conversion = try config.conversion(source: source, destination: destination)
         return try processor(transformIDs: conversion.pipeline)
     }
 
     public func displayProcessor(configuration: String? = nil, source: String, display: String,
                                  view: String, direction: TransformDirection = .forward) throws -> ColorProcessor {
-        let config = try catalogue.configuration(configuration)
+        let config = try requireCatalogue().configuration(configuration)
         let space = try config.colorSpace(named: source)
         guard let transform = config.displayViews.first(where: {
             $0.source == space.name && $0.display.caseInsensitiveCompare(display) == .orderedSame &&
@@ -73,6 +82,7 @@ public final class MetalColorEngine: @unchecked Sendable {
     }
 
     public func builtinProcessor(_ name: String, direction: TransformDirection = .forward) throws -> ColorProcessor {
+        let catalogue = try requireCatalogue()
         guard let builtin = catalogue.builtins.first(where: { $0.name == name }) else {
             throw OCIOError.unknownTransform(name)
         }
@@ -81,7 +91,7 @@ public final class MetalColorEngine: @unchecked Sendable {
 
     public func namedTransformProcessor(configuration: String? = nil, name: String,
                                         direction: TransformDirection = .forward) throws -> ColorProcessor {
-        let config = try catalogue.configuration(configuration)
+        let config = try requireCatalogue().configuration(configuration)
         guard let named = config.namedTransforms.first(where: {
             $0.name.caseInsensitiveCompare(name) == .orderedSame ||
             $0.aliases.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame })
@@ -92,7 +102,7 @@ public final class MetalColorEngine: @unchecked Sendable {
     /// The input/output RGB values are expressed in the look's declared process space.
     public func lookProcessor(configuration: String? = nil, name: String,
                               direction: TransformDirection = .forward) throws -> ColorProcessor {
-        let config = try catalogue.configuration(configuration)
+        let config = try requireCatalogue().configuration(configuration)
         guard let look = config.looks.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else {
             throw OCIOError.unknownTransform(name)
         }
@@ -144,6 +154,7 @@ public final class MetalColorEngine: @unchecked Sendable {
             cacheOrder.append(id)
             return existing
         }
+        let catalogue = try requireCatalogue()
         let transform = try catalogue.transform(id)
         let source = try String(contentsOf: catalogue.resourceURL(transform.shader), encoding: .utf8)
         let textures = try transform.textures.map { ($0.bindingIndex, try makeTexture($0)) }
@@ -172,7 +183,7 @@ public final class MetalColorEngine: @unchecked Sendable {
     }
 
     private func makeTexture(_ spec: OCIOTexture) throws -> any MTLTexture {
-        let source = try Data(contentsOf: catalogue.resourceURL(spec.data), options: .mappedIfSafe)
+        let source = try Data(contentsOf: requireCatalogue().resourceURL(spec.data), options: .mappedIfSafe)
         let texelCount = try OCIOCatalogue.checkedProduct([spec.width, spec.height, spec.depth])
         let inputByteCount = try OCIOCatalogue.checkedProduct([texelCount, spec.channels, 4])
         guard source.count == inputByteCount else { throw OCIOError.invalidArchive("LUT size mismatch: \(spec.data)") }
@@ -228,6 +239,13 @@ public final class MetalColorEngine: @unchecked Sendable {
             }
         }
         return texture
+    }
+
+    private func requireCatalogue() throws -> OCIOCatalogue {
+        guard let catalogue else {
+            throw OCIOError.missingResource("this operation requires a catalogue; initialize MetalColorEngine(catalogue:device:) to resolve registered configurations, builtins, looks or named transforms")
+        }
+        return catalogue
     }
 }
 

@@ -38,6 +38,37 @@ def shader_descriptor(transform):
     return desc
 
 
+def match_hue_cpu_semantics(source, style_name, direction_name, variant):
+    """Correct two upstream GPU/CPU discrepancies verified by native Metal tests.
+
+    GradingHueCurveOpCPU.cpp applies additive luminance changes for video and log;
+    the GPU emitter uses the log branch only. GradingBSplineCurve::evalCurveRevHue
+    shifts both first/last y knots for HueFX; AddShaderEvalRevHue shifts only last.
+    These corrections preserve the canonical CPU conversion without relaxation
+    of the GPU numerical validation tolerances.
+    """
+    if style_name == "video" and ".draw" not in variant:
+        before = ("outColor.b = outColor.b * hueLumGain * satLumGain;" if direction_name == "forward" else
+                  "outColor.b = outColor.b / max(0.01, hueLumGain * satLumGain);")
+        after = ("outColor.b = outColor.b + (hueLumGain + satLumGain - 2.) * 0.1;" if direction_name == "forward" else
+                 "outColor.b = outColor.b - (hueLumGain + satLumGain - 2.) * 0.1;")
+        if before in source:
+            source = source.replace(before, "// Match the upstream CPU video luminance operation.\n      " + after)
+        elif after not in source:
+            raise RuntimeError("Unrecognized upstream hue video luminance shader")
+    function = "float ocio_grading_huecurve_evalBSplineCurveRevHue("
+    if function in source:
+        prefix, suffix = source.split(function, 1)
+        correction = "knStartY = (curveIdx == 7) ? knStartY + knStart : knStartY;"
+        if correction not in suffix:
+            anchor = "float knEndY;"
+            if anchor not in suffix:
+                raise RuntimeError("Unrecognized upstream inverse hue knot shader")
+            suffix = suffix.replace(anchor, "// Match the upstream CPU HueFX lower periodic bound.\n  " + correction + "\n  " + anchor, 1)
+        source = prefix + function + suffix
+    return source
+
+
 def generate_templates():
     templates = {}
     classes = {"primary": ocio.GradingPrimaryTransform, "tone": ocio.GradingToneTransform,
@@ -45,19 +76,23 @@ def generate_templates():
     for kind, cls in classes.items():
         for style_name, style in (("log", ocio.GRADING_LOG), ("lin", ocio.GRADING_LIN), ("video", ocio.GRADING_VIDEO)):
             for direction_name, direction in (("forward", ocio.TRANSFORM_DIR_FORWARD), ("inverse", ocio.TRANSFORM_DIR_INVERSE)):
-                variants = [""] + ([".bypass"] if kind == "rgb" and style_name == "lin" else []) + ([".draw"] if kind == "hue" else [])
+                variants = [""] + ([".bypass"] if kind == "rgb" and style_name == "lin" else []) + ([".draw", ".nohsy", ".draw.nohsy"] if kind == "hue" else [])
                 for variant in variants:
                     transform = cls(style)
                     transform.setDirection(direction)
                     if variant == ".bypass":
                         transform.setBypassLinToLog(True)
-                    if variant == ".draw":
+                    if ".draw" in variant:
                         value = transform.getValue()
                         value.setDrawCurveOnly(True)
                         transform.setValue(value)
+                    if ".nohsy" in variant:
+                        transform.setRGBToHSY(ocio.HSY_TRANSFORM_NONE)
                     transform.makeDynamic()
                     desc = shader_descriptor(transform)
                     source = desc.getShaderText()
+                    if kind == "hue":
+                        source = match_hue_cpu_semantics(source, style_name, direction_name, variant)
                     names = [name for name, _ in desc.getUniforms()]
                     lengths = []
                     for name in names:
@@ -120,6 +155,7 @@ def generate_fixtures():
                         if variant == 3: parameters[key]["slopes"] = [.7,1.2,.6,1.4]
                     if style == "lin" and variant == 5: parameters["lintolog_bypass"] = True
                 elif variant and kind == "GradingHueCurveTransform":
+                    if variant == 5: parameters["hsy_transform"] = "none"
                     for key in ("hue_hue","hue_sat","hue_lum","lum_sat","sat_sat","lum_lum","sat_lum","hue_fx"):
                         xs = [.03,.27,.53,.79] if key.startswith("hue_") else [-7,-1,2,7] if style == "lin" and key.startswith("lum_") else [0,.3,.65,1]
                         if key in ("hue_hue","sat_sat","lum_lum"): ys = [x+rng.uniform(-.05,.05) for x in xs]

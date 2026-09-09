@@ -51,6 +51,7 @@ jobs:
           python3 -m unittest discover -s Tools -p 'test_*.py' -v
           python3 Tools/audit_catalogue.py Sources/OpenColorIOMetal/Resources/Catalogue --compare-registry
           python3 Tools/generate-native-reference.py
+          python3 Tools/generate-legacy-reference.py
           python3 Tools/generate-fixed-reference.py
           python3 Tools/generate-grading-reference.py --fixtures Tests/OpenColorIOConfigTests/Fixtures/grading-reference.json
       - uses: actions/upload-artifact@v4

@@ -26,6 +26,10 @@ extension OCIONativeCompiler {
         let drawCurve = try p.bool("draw_curve_only", defaultValue: false)
         if kind == "rgb" && style == "lin" && bypassLin { key += ".bypass" }
         if kind == "hue" && drawCurve { key += ".draw" }
+        if kind == "hue", p.values["hsy_transform"] != nil {
+            guard try p.string("hsy_transform") == "none" else { throw p.error("unknown hsy_transform value") }
+            key += ".nohsy"
+        }
         guard let template = gradingShaderTemplate(key) else { throw p.error("missing grading shader template \(key)") }
         let name = "native_grading_\(helperFunctions.count)_"
         let shader = template.source.replacingOccurrences(of: "ocio_", with: name)
@@ -112,6 +116,7 @@ private func gradingPrimary(_ p: NativeParameters, style: String, inverse: Bool)
     let saturation = try p.number("saturation", defaultValue: 1)
     guard white - black >= 0.009999, clampBlack <= clampWhite else { throw p.error("invalid primary pivot or clamp interval") }
     if style != "video" && contrast.contains(where: { $0 < 0.009999 }) { throw p.error("primary contrast must be at least 0.01") }
+    if style != "lin" && gamma.contains(where: { $0 < 0.009999 }) { throw p.error("primary gamma must be at least 0.01") }
     var result: [String: GradingUniformValue] = ["pivotBlack": .scalar(black), "pivotWhite": .scalar(white),
         "clampBlack": .scalar(clampBlack), "clampWhite": .scalar(clampWhite), "saturation": .scalar(saturation)]
     var bypass = saturation == 1 && clampBlack == -Double.greatestFiniteMagnitude && clampWhite == Double.greatestFiniteMagnitude
@@ -219,6 +224,10 @@ private struct GradingPoint { var x: Float; var y: Float }
 private struct GradingSpline { var knots: [Float]; var a: [Float]; var b: [Float]; var c: [Float] }
 
 private func gradingCurves(_ p: NativeParameters, style: String, hue: Bool) throws -> [String: GradingUniformValue] {
+    if hue, p.values["hsy_transform"] != nil {
+        guard try p.string("hsy_transform") == "none" else { throw p.error("unknown hsy_transform value") }
+    }
+    if !hue { _ = try p.bool("lintolog_bypass", defaultValue: false) }
     let names = hue ? ["hue_hue", "hue_sat", "hue_lum", "lum_sat", "sat_sat", "lum_lum", "sat_lum", "hue_fx"] : ["red", "green", "blue", "master"]
     let types: [GradingSplineType] = hue ? [.hueHue,.periodicOne,.periodicOne,.horizontalOne,.diagonal,.diagonal,.horizontalOne,.periodicZero] : Array(repeating: .rgb, count: 4)
     let draw = try p.bool("draw_curve_only", defaultValue: false) && hue
@@ -423,6 +432,7 @@ extension CTFFile {
         guard ["log", "lin", "video"].contains(style) else { throw error(node, "invalid grading style") }
         var fields: [String: YAMLValue] = ["style": .scalar(style)]
         if let bypass = node.attributes["bypassLinToLog"] { fields["lintolog_bypass"] = .scalar(bypass) }
+        if let hsy = node.attributes["hsyTransform"] { fields["hsy_transform"] = .scalar(hsy) }
         let curves = ["Red": "red", "Green": "green", "Blue": "blue", "Master": "master",
                       "HueHue": "hue_hue", "HueSat": "hue_sat", "HueLum": "hue_lum", "LumSat": "lum_sat",
                       "SatSat": "sat_sat", "LumLum": "lum_lum", "SatLum": "sat_lum", "HueFx": "hue_fx"]
@@ -890,6 +900,365 @@ float4 grading_transform(
   ).grading_transform(inPixel);
 }
 """#)
+    case "hue.lin.forward.draw.nohsy":
+        return GradingShaderTemplate(names: ["ocio_grading_huecurve_knotsOffsets", "ocio_grading_huecurve_knots", "ocio_grading_huecurve_coefsOffsets", "ocio_grading_huecurve_coefs", "ocio_grading_huecurve_localBypass"], lengths: [16, 120, 16, 360, 0], source: #"""
+
+// Declaration of class wrapper
+
+struct ocio_grading_transform
+{
+ocio_grading_transform(
+  constant int ocio_grading_huecurve_knotsOffsets[16]
+  , int ocio_grading_huecurve_knotsOffsets_count
+  , constant float ocio_grading_huecurve_knots[120]
+  , int ocio_grading_huecurve_knots_count
+  , constant int ocio_grading_huecurve_coefsOffsets[16]
+  , int ocio_grading_huecurve_coefsOffsets_count
+  , constant float ocio_grading_huecurve_coefs[360]
+  , int ocio_grading_huecurve_coefs_count
+  , bool ocio_grading_huecurve_localBypass
+)
+{
+  for(int i = 0; i < ocio_grading_huecurve_knotsOffsets_count; ++i)
+  {
+    this->ocio_grading_huecurve_knotsOffsets[i] = ocio_grading_huecurve_knotsOffsets[i];
+  }
+  for(int i = ocio_grading_huecurve_knotsOffsets_count; i < 16; ++i)
+  {
+    this->ocio_grading_huecurve_knotsOffsets[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_knots_count; ++i)
+  {
+    this->ocio_grading_huecurve_knots[i] = ocio_grading_huecurve_knots[i];
+  }
+  for(int i = ocio_grading_huecurve_knots_count; i < 120; ++i)
+  {
+    this->ocio_grading_huecurve_knots[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_coefsOffsets_count; ++i)
+  {
+    this->ocio_grading_huecurve_coefsOffsets[i] = ocio_grading_huecurve_coefsOffsets[i];
+  }
+  for(int i = ocio_grading_huecurve_coefsOffsets_count; i < 16; ++i)
+  {
+    this->ocio_grading_huecurve_coefsOffsets[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_coefs_count; ++i)
+  {
+    this->ocio_grading_huecurve_coefs[i] = ocio_grading_huecurve_coefs[i];
+  }
+  for(int i = ocio_grading_huecurve_coefs_count; i < 360; ++i)
+  {
+    this->ocio_grading_huecurve_coefs[i] = 0;
+  }
+  this->ocio_grading_huecurve_localBypass = ocio_grading_huecurve_localBypass;
+}
+
+
+// Declaration of all variables
+
+int ocio_grading_huecurve_knotsOffsets[16];
+float ocio_grading_huecurve_knots[120];
+int ocio_grading_huecurve_coefsOffsets[16];
+float ocio_grading_huecurve_coefs[360];
+bool ocio_grading_huecurve_localBypass;
+
+
+// Declaration of all helper methods
+
+
+float ocio_grading_huecurve_evalBSplineCurve(int curveIdx, float x, float identity_x)
+{
+  int knotsOffs = ocio_grading_huecurve_knotsOffsets[curveIdx * 2];
+  int knotsCnt = ocio_grading_huecurve_knotsOffsets[curveIdx * 2 + 1];
+  int coefsOffs = ocio_grading_huecurve_coefsOffsets[curveIdx * 2];
+  int coefsCnt = ocio_grading_huecurve_coefsOffsets[curveIdx * 2 + 1];
+  int coefsSets = coefsCnt / 3;
+  if (coefsSets == 0)
+  {
+    return identity_x;
+  }
+  float knStart = ocio_grading_huecurve_knots[knotsOffs];
+  float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
+  if (x <= knStart)
+  {
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+    return (x - knStart) * B + C;
+  }
+  else if (x >= knEnd)
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    float slope = 2. * A * t + B;
+    float offs = ( A * t + B ) * t + C;
+    return (x - knEnd) * slope + offs;
+  }
+  int i = 0;
+  for (i = 0; i < knotsCnt - 2; ++i)
+  {
+    if (x < ocio_grading_huecurve_knots[knotsOffs + i + 1])
+    {
+      break;
+    }
+  }
+  float A = ocio_grading_huecurve_coefs[coefsOffs + i];
+  float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets + i];
+  float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i];
+  float kn = ocio_grading_huecurve_knots[knotsOffs + i];
+  float t = x - kn;
+  return ( A * t + B ) * t + C;
+}
+
+// Declaration of the OCIO shader function
+
+float4 grading_transform(float4 inPixel)
+{
+  float4 outColor = inPixel;
+  
+  // Add GradingHueCurve forward processing
+  
+  {
+    outColor.r = ocio_grading_huecurve_evalBSplineCurve(1, outColor.r, 1.);
+    outColor.g = ocio_grading_huecurve_evalBSplineCurve(1, outColor.g, 1.);
+    outColor.b = ocio_grading_huecurve_evalBSplineCurve(1, outColor.b, 1.);
+  }
+
+  return outColor;
+}
+
+// Close class wrapper
+
+
+};
+float4 grading_transform(
+  constant int ocio_grading_huecurve_knotsOffsets[16]
+  , int ocio_grading_huecurve_knotsOffsets_count
+  , constant float ocio_grading_huecurve_knots[120]
+  , int ocio_grading_huecurve_knots_count
+  , constant int ocio_grading_huecurve_coefsOffsets[16]
+  , int ocio_grading_huecurve_coefsOffsets_count
+  , constant float ocio_grading_huecurve_coefs[360]
+  , int ocio_grading_huecurve_coefs_count
+  , bool ocio_grading_huecurve_localBypass
+  , float4 inPixel)
+{
+  return ocio_grading_transform(
+    ocio_grading_huecurve_knotsOffsets
+    , ocio_grading_huecurve_knotsOffsets_count
+    , ocio_grading_huecurve_knots
+    , ocio_grading_huecurve_knots_count
+    , ocio_grading_huecurve_coefsOffsets
+    , ocio_grading_huecurve_coefsOffsets_count
+    , ocio_grading_huecurve_coefs
+    , ocio_grading_huecurve_coefs_count
+    , ocio_grading_huecurve_localBypass
+  ).grading_transform(inPixel);
+}
+"""#)
+    case "hue.lin.forward.nohsy":
+        return GradingShaderTemplate(names: ["ocio_grading_huecurve_knotsOffsets", "ocio_grading_huecurve_knots", "ocio_grading_huecurve_coefsOffsets", "ocio_grading_huecurve_coefs", "ocio_grading_huecurve_localBypass"], lengths: [16, 120, 16, 360, 0], source: #"""
+
+// Declaration of class wrapper
+
+struct ocio_grading_transform
+{
+ocio_grading_transform(
+  constant int ocio_grading_huecurve_knotsOffsets[16]
+  , int ocio_grading_huecurve_knotsOffsets_count
+  , constant float ocio_grading_huecurve_knots[120]
+  , int ocio_grading_huecurve_knots_count
+  , constant int ocio_grading_huecurve_coefsOffsets[16]
+  , int ocio_grading_huecurve_coefsOffsets_count
+  , constant float ocio_grading_huecurve_coefs[360]
+  , int ocio_grading_huecurve_coefs_count
+  , bool ocio_grading_huecurve_localBypass
+)
+{
+  for(int i = 0; i < ocio_grading_huecurve_knotsOffsets_count; ++i)
+  {
+    this->ocio_grading_huecurve_knotsOffsets[i] = ocio_grading_huecurve_knotsOffsets[i];
+  }
+  for(int i = ocio_grading_huecurve_knotsOffsets_count; i < 16; ++i)
+  {
+    this->ocio_grading_huecurve_knotsOffsets[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_knots_count; ++i)
+  {
+    this->ocio_grading_huecurve_knots[i] = ocio_grading_huecurve_knots[i];
+  }
+  for(int i = ocio_grading_huecurve_knots_count; i < 120; ++i)
+  {
+    this->ocio_grading_huecurve_knots[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_coefsOffsets_count; ++i)
+  {
+    this->ocio_grading_huecurve_coefsOffsets[i] = ocio_grading_huecurve_coefsOffsets[i];
+  }
+  for(int i = ocio_grading_huecurve_coefsOffsets_count; i < 16; ++i)
+  {
+    this->ocio_grading_huecurve_coefsOffsets[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_coefs_count; ++i)
+  {
+    this->ocio_grading_huecurve_coefs[i] = ocio_grading_huecurve_coefs[i];
+  }
+  for(int i = ocio_grading_huecurve_coefs_count; i < 360; ++i)
+  {
+    this->ocio_grading_huecurve_coefs[i] = 0;
+  }
+  this->ocio_grading_huecurve_localBypass = ocio_grading_huecurve_localBypass;
+}
+
+
+// Declaration of all variables
+
+int ocio_grading_huecurve_knotsOffsets[16];
+float ocio_grading_huecurve_knots[120];
+int ocio_grading_huecurve_coefsOffsets[16];
+float ocio_grading_huecurve_coefs[360];
+bool ocio_grading_huecurve_localBypass;
+
+
+// Declaration of all helper methods
+
+
+float ocio_grading_huecurve_evalBSplineCurve(int curveIdx, float x, float identity_x)
+{
+  int knotsOffs = ocio_grading_huecurve_knotsOffsets[curveIdx * 2];
+  int knotsCnt = ocio_grading_huecurve_knotsOffsets[curveIdx * 2 + 1];
+  int coefsOffs = ocio_grading_huecurve_coefsOffsets[curveIdx * 2];
+  int coefsCnt = ocio_grading_huecurve_coefsOffsets[curveIdx * 2 + 1];
+  int coefsSets = coefsCnt / 3;
+  if (coefsSets == 0)
+  {
+    return identity_x;
+  }
+  float knStart = ocio_grading_huecurve_knots[knotsOffs];
+  float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
+  if (x <= knStart)
+  {
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+    return (x - knStart) * B + C;
+  }
+  else if (x >= knEnd)
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    float slope = 2. * A * t + B;
+    float offs = ( A * t + B ) * t + C;
+    return (x - knEnd) * slope + offs;
+  }
+  int i = 0;
+  for (i = 0; i < knotsCnt - 2; ++i)
+  {
+    if (x < ocio_grading_huecurve_knots[knotsOffs + i + 1])
+    {
+      break;
+    }
+  }
+  float A = ocio_grading_huecurve_coefs[coefsOffs + i];
+  float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets + i];
+  float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i];
+  float kn = ocio_grading_huecurve_knots[knotsOffs + i];
+  float t = x - kn;
+  return ( A * t + B ) * t + C;
+}
+
+// Declaration of the OCIO shader function
+
+float4 grading_transform(float4 inPixel)
+{
+  float4 outColor = inPixel;
+  
+  // Add GradingHueCurve forward processing
+  
+  {
+    if (!ocio_grading_huecurve_localBypass)
+    {
+      // Convert from lin to log.
+      {
+        const float xbrk = 0.0041318374739483946;
+        const float shift = -0.000157849851665374;
+        const float m = 1. / (0.18 + shift);
+        const float base2 = 1.4426950408889634;
+        const float gain = 363.034608563;
+        const float offs = -7.;
+        float3 ylin = outColor.rgb * gain + offs;
+        float3 ylog = base2 * log( ( outColor.rgb + shift ) * m );
+        outColor.rgb.b = (outColor.rgb.b < xbrk) ? ylin.z : ylog.z;
+      }
+      
+      
+      float hueSatGain = max(0., ocio_grading_huecurve_evalBSplineCurve(1, outColor.r, 1.));
+      float hueLumGain = max(0., ocio_grading_huecurve_evalBSplineCurve(2, outColor.r, 1.));
+      outColor.r = ocio_grading_huecurve_evalBSplineCurve(0, outColor.r, outColor.r);
+      outColor.g = max(0., ocio_grading_huecurve_evalBSplineCurve(4, outColor.g, outColor.g));
+      float lumSatGain = max(0., ocio_grading_huecurve_evalBSplineCurve(3, outColor.b, 1.));
+      float satGain = lumSatGain * hueSatGain;
+      outColor.g = satGain * outColor.g;
+      float satLumGain = max(0., ocio_grading_huecurve_evalBSplineCurve(6, outColor.g, 1.));
+      outColor.b = ocio_grading_huecurve_evalBSplineCurve(5, outColor.b, outColor.b);
+      
+      
+      // Convert from log to lin.
+      {
+        const float ybrk = -5.5;
+        const float shift = -0.000157849851665374;
+        const float gain = 363.034608563;
+        const float offs = -7.;
+        float3 xlin = (outColor.rgb - offs) / gain;
+        float3 xlog = pow( float3(2., 2., 2.), outColor.rgb ) * (0.18 + shift) - shift;
+        outColor.rgb.b = (outColor.rgb.b < ybrk) ? xlin.z : xlog.z;
+      }
+      
+      hueLumGain = 1. - (1. - hueLumGain) * min( 1., outColor.g );
+      outColor.b = outColor.b * hueLumGain * satLumGain;
+      
+      outColor.r = outColor.r - floor( outColor.r );
+      outColor.r = outColor.r + ocio_grading_huecurve_evalBSplineCurve(7, outColor.r, 0.);
+    }
+  }
+
+  return outColor;
+}
+
+// Close class wrapper
+
+
+};
+float4 grading_transform(
+  constant int ocio_grading_huecurve_knotsOffsets[16]
+  , int ocio_grading_huecurve_knotsOffsets_count
+  , constant float ocio_grading_huecurve_knots[120]
+  , int ocio_grading_huecurve_knots_count
+  , constant int ocio_grading_huecurve_coefsOffsets[16]
+  , int ocio_grading_huecurve_coefsOffsets_count
+  , constant float ocio_grading_huecurve_coefs[360]
+  , int ocio_grading_huecurve_coefs_count
+  , bool ocio_grading_huecurve_localBypass
+  , float4 inPixel)
+{
+  return ocio_grading_transform(
+    ocio_grading_huecurve_knotsOffsets
+    , ocio_grading_huecurve_knotsOffsets_count
+    , ocio_grading_huecurve_knots
+    , ocio_grading_huecurve_knots_count
+    , ocio_grading_huecurve_coefsOffsets
+    , ocio_grading_huecurve_coefsOffsets_count
+    , ocio_grading_huecurve_coefs
+    , ocio_grading_huecurve_coefs_count
+    , ocio_grading_huecurve_localBypass
+  ).grading_transform(inPixel);
+}
+"""#)
     case "hue.lin.inverse":
         return GradingShaderTemplate(names: ["ocio_grading_huecurve_knotsOffsets", "ocio_grading_huecurve_knots", "ocio_grading_huecurve_coefsOffsets", "ocio_grading_huecurve_coefs", "ocio_grading_huecurve_localBypass"], lengths: [16, 120, 16, 360, 0], source: #"""
 
@@ -1079,6 +1448,8 @@ float ocio_grading_huecurve_evalBSplineCurveRevHue(int curveIdx, float x)
   float knStart = ocio_grading_huecurve_knots[knotsOffs];
   float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
   float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+  // Match the upstream CPU HueFX lower periodic bound.
+  knStartY = (curveIdx == 7) ? knStartY + knStart : knStartY;
   float knEndY;
   {
     float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
@@ -1472,6 +1843,8 @@ float ocio_grading_huecurve_evalBSplineCurveRevHue(int curveIdx, float x)
   float knStart = ocio_grading_huecurve_knots[knotsOffs];
   float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
   float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+  // Match the upstream CPU HueFX lower periodic bound.
+  knStartY = (curveIdx == 7) ? knStartY + knStart : knStartY;
   float knEndY;
   {
     float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
@@ -1531,6 +1904,616 @@ float4 grading_transform(float4 inPixel)
     outColor.r = ocio_grading_huecurve_evalBSplineCurve(1, outColor.r, 1.);
     outColor.g = ocio_grading_huecurve_evalBSplineCurve(1, outColor.g, 1.);
     outColor.b = ocio_grading_huecurve_evalBSplineCurve(1, outColor.b, 1.);
+  }
+
+  return outColor;
+}
+
+// Close class wrapper
+
+
+};
+float4 grading_transform(
+  constant int ocio_grading_huecurve_knotsOffsets[16]
+  , int ocio_grading_huecurve_knotsOffsets_count
+  , constant float ocio_grading_huecurve_knots[120]
+  , int ocio_grading_huecurve_knots_count
+  , constant int ocio_grading_huecurve_coefsOffsets[16]
+  , int ocio_grading_huecurve_coefsOffsets_count
+  , constant float ocio_grading_huecurve_coefs[360]
+  , int ocio_grading_huecurve_coefs_count
+  , bool ocio_grading_huecurve_localBypass
+  , float4 inPixel)
+{
+  return ocio_grading_transform(
+    ocio_grading_huecurve_knotsOffsets
+    , ocio_grading_huecurve_knotsOffsets_count
+    , ocio_grading_huecurve_knots
+    , ocio_grading_huecurve_knots_count
+    , ocio_grading_huecurve_coefsOffsets
+    , ocio_grading_huecurve_coefsOffsets_count
+    , ocio_grading_huecurve_coefs
+    , ocio_grading_huecurve_coefs_count
+    , ocio_grading_huecurve_localBypass
+  ).grading_transform(inPixel);
+}
+"""#)
+    case "hue.lin.inverse.draw.nohsy":
+        return GradingShaderTemplate(names: ["ocio_grading_huecurve_knotsOffsets", "ocio_grading_huecurve_knots", "ocio_grading_huecurve_coefsOffsets", "ocio_grading_huecurve_coefs", "ocio_grading_huecurve_localBypass"], lengths: [16, 120, 16, 360, 0], source: #"""
+
+// Declaration of class wrapper
+
+struct ocio_grading_transform
+{
+ocio_grading_transform(
+  constant int ocio_grading_huecurve_knotsOffsets[16]
+  , int ocio_grading_huecurve_knotsOffsets_count
+  , constant float ocio_grading_huecurve_knots[120]
+  , int ocio_grading_huecurve_knots_count
+  , constant int ocio_grading_huecurve_coefsOffsets[16]
+  , int ocio_grading_huecurve_coefsOffsets_count
+  , constant float ocio_grading_huecurve_coefs[360]
+  , int ocio_grading_huecurve_coefs_count
+  , bool ocio_grading_huecurve_localBypass
+)
+{
+  for(int i = 0; i < ocio_grading_huecurve_knotsOffsets_count; ++i)
+  {
+    this->ocio_grading_huecurve_knotsOffsets[i] = ocio_grading_huecurve_knotsOffsets[i];
+  }
+  for(int i = ocio_grading_huecurve_knotsOffsets_count; i < 16; ++i)
+  {
+    this->ocio_grading_huecurve_knotsOffsets[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_knots_count; ++i)
+  {
+    this->ocio_grading_huecurve_knots[i] = ocio_grading_huecurve_knots[i];
+  }
+  for(int i = ocio_grading_huecurve_knots_count; i < 120; ++i)
+  {
+    this->ocio_grading_huecurve_knots[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_coefsOffsets_count; ++i)
+  {
+    this->ocio_grading_huecurve_coefsOffsets[i] = ocio_grading_huecurve_coefsOffsets[i];
+  }
+  for(int i = ocio_grading_huecurve_coefsOffsets_count; i < 16; ++i)
+  {
+    this->ocio_grading_huecurve_coefsOffsets[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_coefs_count; ++i)
+  {
+    this->ocio_grading_huecurve_coefs[i] = ocio_grading_huecurve_coefs[i];
+  }
+  for(int i = ocio_grading_huecurve_coefs_count; i < 360; ++i)
+  {
+    this->ocio_grading_huecurve_coefs[i] = 0;
+  }
+  this->ocio_grading_huecurve_localBypass = ocio_grading_huecurve_localBypass;
+}
+
+
+// Declaration of all variables
+
+int ocio_grading_huecurve_knotsOffsets[16];
+float ocio_grading_huecurve_knots[120];
+int ocio_grading_huecurve_coefsOffsets[16];
+float ocio_grading_huecurve_coefs[360];
+bool ocio_grading_huecurve_localBypass;
+
+
+// Declaration of all helper methods
+
+
+float ocio_grading_huecurve_evalBSplineCurve(int curveIdx, float x, float identity_x)
+{
+  int knotsOffs = ocio_grading_huecurve_knotsOffsets[curveIdx * 2];
+  int knotsCnt = ocio_grading_huecurve_knotsOffsets[curveIdx * 2 + 1];
+  int coefsOffs = ocio_grading_huecurve_coefsOffsets[curveIdx * 2];
+  int coefsCnt = ocio_grading_huecurve_coefsOffsets[curveIdx * 2 + 1];
+  int coefsSets = coefsCnt / 3;
+  if (coefsSets == 0)
+  {
+    return identity_x;
+  }
+  float knStart = ocio_grading_huecurve_knots[knotsOffs];
+  float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
+  if (x <= knStart)
+  {
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+    return (x - knStart) * B + C;
+  }
+  else if (x >= knEnd)
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    float slope = 2. * A * t + B;
+    float offs = ( A * t + B ) * t + C;
+    return (x - knEnd) * slope + offs;
+  }
+  int i = 0;
+  for (i = 0; i < knotsCnt - 2; ++i)
+  {
+    if (x < ocio_grading_huecurve_knots[knotsOffs + i + 1])
+    {
+      break;
+    }
+  }
+  float A = ocio_grading_huecurve_coefs[coefsOffs + i];
+  float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets + i];
+  float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i];
+  float kn = ocio_grading_huecurve_knots[knotsOffs + i];
+  float t = x - kn;
+  return ( A * t + B ) * t + C;
+}
+
+float ocio_grading_huecurve_evalBSplineCurveRev(int curveIdx, float x)
+{
+  int knotsOffs = ocio_grading_huecurve_knotsOffsets[curveIdx * 2];
+  int knotsCnt = ocio_grading_huecurve_knotsOffsets[curveIdx * 2 + 1];
+  int coefsOffs = ocio_grading_huecurve_coefsOffsets[curveIdx * 2];
+  int coefsCnt = ocio_grading_huecurve_coefsOffsets[curveIdx * 2 + 1];
+  int coefsSets = coefsCnt / 3;
+  if (coefsSets == 0)
+  {
+    return x;
+  }
+  float knStart = ocio_grading_huecurve_knots[knotsOffs];
+  float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
+  float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+  float knEndY;
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    knEndY = ( A * t + B ) * t + C;
+  }
+  if (x <= knStartY)
+  {
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+    return abs(B) < 1e-5 ? knStart : (x - C) / B + knStart;
+  }
+  else if (x >= knEndY)
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    float slope = 2. * A * t + B;
+    float offs = ( A * t + B ) * t + C;
+    return abs(slope) < 1e-5 ? knEnd : (x - offs) / slope + knEnd;
+  }
+  int i = 0;
+  for (i = 0; i < knotsCnt - 2; ++i)
+  {
+    if (x < ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i + 1])
+    {
+      break;
+    }
+  }
+  float A = ocio_grading_huecurve_coefs[coefsOffs + i];
+  float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets + i];
+  float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i];
+  float kn = ocio_grading_huecurve_knots[knotsOffs + i];
+  float C0 = C - x;
+  float discrim = sqrt(B * B - 4. * A * C0);
+  float denom = discrim + B;
+  if (abs(denom) < 1e-5)
+  {
+    return abs(B) < 1e-5 ? kn : kn + (-C0 / B);
+  }
+  return kn + (-2. * C0) / denom;
+}
+
+float ocio_grading_huecurve_evalBSplineCurveRevHue(int curveIdx, float x)
+{
+  int knotsOffs = ocio_grading_huecurve_knotsOffsets[curveIdx * 2];
+  int knotsCnt = ocio_grading_huecurve_knotsOffsets[curveIdx * 2 + 1];
+  int coefsOffs = ocio_grading_huecurve_coefsOffsets[curveIdx * 2];
+  int coefsCnt = ocio_grading_huecurve_coefsOffsets[curveIdx * 2 + 1];
+  int coefsSets = coefsCnt / 3;
+  if (coefsSets == 0)
+  {
+    return x;
+  }
+  float knStart = ocio_grading_huecurve_knots[knotsOffs];
+  float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
+  float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+  // Match the upstream CPU HueFX lower periodic bound.
+  knStartY = (curveIdx == 7) ? knStartY + knStart : knStartY;
+  float knEndY;
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    knEndY = ( A * t + B ) * t + C;
+    knEndY = (curveIdx == 7) ? knEndY + knEnd : knEndY;
+  }
+  if (x < knStartY)
+  {
+    x = x + ceil(knStartY - x);
+  }
+  else if (x > knEndY)
+  {
+    x = x - ceil(x - knEndY);
+  }
+  int i = 0;
+  for (i = 0; i < knotsCnt - 2; ++i)
+  {
+    float curve_x = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i + 1];
+    curve_x = (curveIdx == 7) ? curve_x + ocio_grading_huecurve_knots[knotsOffs + i + 1] : curve_x;
+    if (x < curve_x)
+    {
+      break;
+    }
+  }
+  float A = ocio_grading_huecurve_coefs[coefsOffs + i];
+  float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets + i];
+  float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i];
+  float kn = ocio_grading_huecurve_knots[knotsOffs + i];
+  if (curveIdx == 7)
+  {
+    C = C + kn;
+    B = B + 1.;
+  }
+  float C0 = C - x;
+  float discrim = sqrt(B * B - 4. * A * C0);
+  float denom = discrim + B;
+  if (abs(denom) < 1e-5)
+  {
+    return abs(B) < 1e-5 ? kn : kn + (-C0 / B);
+  }
+  return kn + (-2. * C0) / denom;
+}
+
+// Declaration of the OCIO shader function
+
+float4 grading_transform(float4 inPixel)
+{
+  float4 outColor = inPixel;
+  
+  // Add GradingHueCurve inverse processing
+  
+  {
+    outColor.r = ocio_grading_huecurve_evalBSplineCurve(1, outColor.r, 1.);
+    outColor.g = ocio_grading_huecurve_evalBSplineCurve(1, outColor.g, 1.);
+    outColor.b = ocio_grading_huecurve_evalBSplineCurve(1, outColor.b, 1.);
+  }
+
+  return outColor;
+}
+
+// Close class wrapper
+
+
+};
+float4 grading_transform(
+  constant int ocio_grading_huecurve_knotsOffsets[16]
+  , int ocio_grading_huecurve_knotsOffsets_count
+  , constant float ocio_grading_huecurve_knots[120]
+  , int ocio_grading_huecurve_knots_count
+  , constant int ocio_grading_huecurve_coefsOffsets[16]
+  , int ocio_grading_huecurve_coefsOffsets_count
+  , constant float ocio_grading_huecurve_coefs[360]
+  , int ocio_grading_huecurve_coefs_count
+  , bool ocio_grading_huecurve_localBypass
+  , float4 inPixel)
+{
+  return ocio_grading_transform(
+    ocio_grading_huecurve_knotsOffsets
+    , ocio_grading_huecurve_knotsOffsets_count
+    , ocio_grading_huecurve_knots
+    , ocio_grading_huecurve_knots_count
+    , ocio_grading_huecurve_coefsOffsets
+    , ocio_grading_huecurve_coefsOffsets_count
+    , ocio_grading_huecurve_coefs
+    , ocio_grading_huecurve_coefs_count
+    , ocio_grading_huecurve_localBypass
+  ).grading_transform(inPixel);
+}
+"""#)
+    case "hue.lin.inverse.nohsy":
+        return GradingShaderTemplate(names: ["ocio_grading_huecurve_knotsOffsets", "ocio_grading_huecurve_knots", "ocio_grading_huecurve_coefsOffsets", "ocio_grading_huecurve_coefs", "ocio_grading_huecurve_localBypass"], lengths: [16, 120, 16, 360, 0], source: #"""
+
+// Declaration of class wrapper
+
+struct ocio_grading_transform
+{
+ocio_grading_transform(
+  constant int ocio_grading_huecurve_knotsOffsets[16]
+  , int ocio_grading_huecurve_knotsOffsets_count
+  , constant float ocio_grading_huecurve_knots[120]
+  , int ocio_grading_huecurve_knots_count
+  , constant int ocio_grading_huecurve_coefsOffsets[16]
+  , int ocio_grading_huecurve_coefsOffsets_count
+  , constant float ocio_grading_huecurve_coefs[360]
+  , int ocio_grading_huecurve_coefs_count
+  , bool ocio_grading_huecurve_localBypass
+)
+{
+  for(int i = 0; i < ocio_grading_huecurve_knotsOffsets_count; ++i)
+  {
+    this->ocio_grading_huecurve_knotsOffsets[i] = ocio_grading_huecurve_knotsOffsets[i];
+  }
+  for(int i = ocio_grading_huecurve_knotsOffsets_count; i < 16; ++i)
+  {
+    this->ocio_grading_huecurve_knotsOffsets[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_knots_count; ++i)
+  {
+    this->ocio_grading_huecurve_knots[i] = ocio_grading_huecurve_knots[i];
+  }
+  for(int i = ocio_grading_huecurve_knots_count; i < 120; ++i)
+  {
+    this->ocio_grading_huecurve_knots[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_coefsOffsets_count; ++i)
+  {
+    this->ocio_grading_huecurve_coefsOffsets[i] = ocio_grading_huecurve_coefsOffsets[i];
+  }
+  for(int i = ocio_grading_huecurve_coefsOffsets_count; i < 16; ++i)
+  {
+    this->ocio_grading_huecurve_coefsOffsets[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_coefs_count; ++i)
+  {
+    this->ocio_grading_huecurve_coefs[i] = ocio_grading_huecurve_coefs[i];
+  }
+  for(int i = ocio_grading_huecurve_coefs_count; i < 360; ++i)
+  {
+    this->ocio_grading_huecurve_coefs[i] = 0;
+  }
+  this->ocio_grading_huecurve_localBypass = ocio_grading_huecurve_localBypass;
+}
+
+
+// Declaration of all variables
+
+int ocio_grading_huecurve_knotsOffsets[16];
+float ocio_grading_huecurve_knots[120];
+int ocio_grading_huecurve_coefsOffsets[16];
+float ocio_grading_huecurve_coefs[360];
+bool ocio_grading_huecurve_localBypass;
+
+
+// Declaration of all helper methods
+
+
+float ocio_grading_huecurve_evalBSplineCurve(int curveIdx, float x, float identity_x)
+{
+  int knotsOffs = ocio_grading_huecurve_knotsOffsets[curveIdx * 2];
+  int knotsCnt = ocio_grading_huecurve_knotsOffsets[curveIdx * 2 + 1];
+  int coefsOffs = ocio_grading_huecurve_coefsOffsets[curveIdx * 2];
+  int coefsCnt = ocio_grading_huecurve_coefsOffsets[curveIdx * 2 + 1];
+  int coefsSets = coefsCnt / 3;
+  if (coefsSets == 0)
+  {
+    return identity_x;
+  }
+  float knStart = ocio_grading_huecurve_knots[knotsOffs];
+  float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
+  if (x <= knStart)
+  {
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+    return (x - knStart) * B + C;
+  }
+  else if (x >= knEnd)
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    float slope = 2. * A * t + B;
+    float offs = ( A * t + B ) * t + C;
+    return (x - knEnd) * slope + offs;
+  }
+  int i = 0;
+  for (i = 0; i < knotsCnt - 2; ++i)
+  {
+    if (x < ocio_grading_huecurve_knots[knotsOffs + i + 1])
+    {
+      break;
+    }
+  }
+  float A = ocio_grading_huecurve_coefs[coefsOffs + i];
+  float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets + i];
+  float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i];
+  float kn = ocio_grading_huecurve_knots[knotsOffs + i];
+  float t = x - kn;
+  return ( A * t + B ) * t + C;
+}
+
+float ocio_grading_huecurve_evalBSplineCurveRev(int curveIdx, float x)
+{
+  int knotsOffs = ocio_grading_huecurve_knotsOffsets[curveIdx * 2];
+  int knotsCnt = ocio_grading_huecurve_knotsOffsets[curveIdx * 2 + 1];
+  int coefsOffs = ocio_grading_huecurve_coefsOffsets[curveIdx * 2];
+  int coefsCnt = ocio_grading_huecurve_coefsOffsets[curveIdx * 2 + 1];
+  int coefsSets = coefsCnt / 3;
+  if (coefsSets == 0)
+  {
+    return x;
+  }
+  float knStart = ocio_grading_huecurve_knots[knotsOffs];
+  float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
+  float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+  float knEndY;
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    knEndY = ( A * t + B ) * t + C;
+  }
+  if (x <= knStartY)
+  {
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+    return abs(B) < 1e-5 ? knStart : (x - C) / B + knStart;
+  }
+  else if (x >= knEndY)
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    float slope = 2. * A * t + B;
+    float offs = ( A * t + B ) * t + C;
+    return abs(slope) < 1e-5 ? knEnd : (x - offs) / slope + knEnd;
+  }
+  int i = 0;
+  for (i = 0; i < knotsCnt - 2; ++i)
+  {
+    if (x < ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i + 1])
+    {
+      break;
+    }
+  }
+  float A = ocio_grading_huecurve_coefs[coefsOffs + i];
+  float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets + i];
+  float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i];
+  float kn = ocio_grading_huecurve_knots[knotsOffs + i];
+  float C0 = C - x;
+  float discrim = sqrt(B * B - 4. * A * C0);
+  float denom = discrim + B;
+  if (abs(denom) < 1e-5)
+  {
+    return abs(B) < 1e-5 ? kn : kn + (-C0 / B);
+  }
+  return kn + (-2. * C0) / denom;
+}
+
+float ocio_grading_huecurve_evalBSplineCurveRevHue(int curveIdx, float x)
+{
+  int knotsOffs = ocio_grading_huecurve_knotsOffsets[curveIdx * 2];
+  int knotsCnt = ocio_grading_huecurve_knotsOffsets[curveIdx * 2 + 1];
+  int coefsOffs = ocio_grading_huecurve_coefsOffsets[curveIdx * 2];
+  int coefsCnt = ocio_grading_huecurve_coefsOffsets[curveIdx * 2 + 1];
+  int coefsSets = coefsCnt / 3;
+  if (coefsSets == 0)
+  {
+    return x;
+  }
+  float knStart = ocio_grading_huecurve_knots[knotsOffs];
+  float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
+  float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+  // Match the upstream CPU HueFX lower periodic bound.
+  knStartY = (curveIdx == 7) ? knStartY + knStart : knStartY;
+  float knEndY;
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    knEndY = ( A * t + B ) * t + C;
+    knEndY = (curveIdx == 7) ? knEndY + knEnd : knEndY;
+  }
+  if (x < knStartY)
+  {
+    x = x + ceil(knStartY - x);
+  }
+  else if (x > knEndY)
+  {
+    x = x - ceil(x - knEndY);
+  }
+  int i = 0;
+  for (i = 0; i < knotsCnt - 2; ++i)
+  {
+    float curve_x = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i + 1];
+    curve_x = (curveIdx == 7) ? curve_x + ocio_grading_huecurve_knots[knotsOffs + i + 1] : curve_x;
+    if (x < curve_x)
+    {
+      break;
+    }
+  }
+  float A = ocio_grading_huecurve_coefs[coefsOffs + i];
+  float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets + i];
+  float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i];
+  float kn = ocio_grading_huecurve_knots[knotsOffs + i];
+  if (curveIdx == 7)
+  {
+    C = C + kn;
+    B = B + 1.;
+  }
+  float C0 = C - x;
+  float discrim = sqrt(B * B - 4. * A * C0);
+  float denom = discrim + B;
+  if (abs(denom) < 1e-5)
+  {
+    return abs(B) < 1e-5 ? kn : kn + (-C0 / B);
+  }
+  return kn + (-2. * C0) / denom;
+}
+
+// Declaration of the OCIO shader function
+
+float4 grading_transform(float4 inPixel)
+{
+  float4 outColor = inPixel;
+  
+  // Add GradingHueCurve inverse processing
+  
+  {
+    if (!ocio_grading_huecurve_localBypass)
+    {
+      outColor.r = ocio_grading_huecurve_evalBSplineCurveRevHue(7, outColor.r);
+      outColor.r = ocio_grading_huecurve_evalBSplineCurveRevHue(0, outColor.r);
+      
+      outColor.r = outColor.r - floor( outColor.r );
+      float hueSatGain = max(0., ocio_grading_huecurve_evalBSplineCurve(1, outColor.r, 1.));
+      float hueLumGain = max(0., ocio_grading_huecurve_evalBSplineCurve(2, outColor.r, 1.));
+      outColor.g = max(0., outColor.g);
+      float satLumGain = max(0., ocio_grading_huecurve_evalBSplineCurve(6, outColor.g, 1.));
+      
+      hueLumGain = 1. - (1. - hueLumGain) * min( 1., outColor.g );
+      outColor.b = outColor.b / max(0.01, hueLumGain * satLumGain);
+      
+      // Convert from lin to log.
+      {
+        const float xbrk = 0.0041318374739483946;
+        const float shift = -0.000157849851665374;
+        const float m = 1. / (0.18 + shift);
+        const float base2 = 1.4426950408889634;
+        const float gain = 363.034608563;
+        const float offs = -7.;
+        float3 ylin = outColor.rgb * gain + offs;
+        float3 ylog = base2 * log( ( outColor.rgb + shift ) * m );
+        outColor.rgb.b = (outColor.rgb.b < xbrk) ? ylin.z : ylog.z;
+      }
+      
+      outColor.b = ocio_grading_huecurve_evalBSplineCurveRev(5, outColor.b);
+      
+      float lumSatGain = max(0., ocio_grading_huecurve_evalBSplineCurve(3, outColor.b, 1.));
+      
+      // Convert from log to lin.
+      {
+        const float ybrk = -5.5;
+        const float shift = -0.000157849851665374;
+        const float gain = 363.034608563;
+        const float offs = -7.;
+        float3 xlin = (outColor.rgb - offs) / gain;
+        float3 xlog = pow( float3(2., 2., 2.), outColor.rgb ) * (0.18 + shift) - shift;
+        outColor.rgb.b = (outColor.rgb.b < ybrk) ? xlin.z : xlog.z;
+      }
+      float satGain = max(0.01, lumSatGain * hueSatGain);
+      outColor.g = outColor.g / satGain;
+      outColor.g = max(0., ocio_grading_huecurve_evalBSplineCurveRev(4, outColor.g));
+    }
   }
 
   return outColor;
@@ -1947,6 +2930,341 @@ float4 grading_transform(
   ).grading_transform(inPixel);
 }
 """#)
+    case "hue.log.forward.draw.nohsy":
+        return GradingShaderTemplate(names: ["ocio_grading_huecurve_knotsOffsets", "ocio_grading_huecurve_knots", "ocio_grading_huecurve_coefsOffsets", "ocio_grading_huecurve_coefs", "ocio_grading_huecurve_localBypass"], lengths: [16, 120, 16, 360, 0], source: #"""
+
+// Declaration of class wrapper
+
+struct ocio_grading_transform
+{
+ocio_grading_transform(
+  constant int ocio_grading_huecurve_knotsOffsets[16]
+  , int ocio_grading_huecurve_knotsOffsets_count
+  , constant float ocio_grading_huecurve_knots[120]
+  , int ocio_grading_huecurve_knots_count
+  , constant int ocio_grading_huecurve_coefsOffsets[16]
+  , int ocio_grading_huecurve_coefsOffsets_count
+  , constant float ocio_grading_huecurve_coefs[360]
+  , int ocio_grading_huecurve_coefs_count
+  , bool ocio_grading_huecurve_localBypass
+)
+{
+  for(int i = 0; i < ocio_grading_huecurve_knotsOffsets_count; ++i)
+  {
+    this->ocio_grading_huecurve_knotsOffsets[i] = ocio_grading_huecurve_knotsOffsets[i];
+  }
+  for(int i = ocio_grading_huecurve_knotsOffsets_count; i < 16; ++i)
+  {
+    this->ocio_grading_huecurve_knotsOffsets[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_knots_count; ++i)
+  {
+    this->ocio_grading_huecurve_knots[i] = ocio_grading_huecurve_knots[i];
+  }
+  for(int i = ocio_grading_huecurve_knots_count; i < 120; ++i)
+  {
+    this->ocio_grading_huecurve_knots[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_coefsOffsets_count; ++i)
+  {
+    this->ocio_grading_huecurve_coefsOffsets[i] = ocio_grading_huecurve_coefsOffsets[i];
+  }
+  for(int i = ocio_grading_huecurve_coefsOffsets_count; i < 16; ++i)
+  {
+    this->ocio_grading_huecurve_coefsOffsets[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_coefs_count; ++i)
+  {
+    this->ocio_grading_huecurve_coefs[i] = ocio_grading_huecurve_coefs[i];
+  }
+  for(int i = ocio_grading_huecurve_coefs_count; i < 360; ++i)
+  {
+    this->ocio_grading_huecurve_coefs[i] = 0;
+  }
+  this->ocio_grading_huecurve_localBypass = ocio_grading_huecurve_localBypass;
+}
+
+
+// Declaration of all variables
+
+int ocio_grading_huecurve_knotsOffsets[16];
+float ocio_grading_huecurve_knots[120];
+int ocio_grading_huecurve_coefsOffsets[16];
+float ocio_grading_huecurve_coefs[360];
+bool ocio_grading_huecurve_localBypass;
+
+
+// Declaration of all helper methods
+
+
+float ocio_grading_huecurve_evalBSplineCurve(int curveIdx, float x, float identity_x)
+{
+  int knotsOffs = ocio_grading_huecurve_knotsOffsets[curveIdx * 2];
+  int knotsCnt = ocio_grading_huecurve_knotsOffsets[curveIdx * 2 + 1];
+  int coefsOffs = ocio_grading_huecurve_coefsOffsets[curveIdx * 2];
+  int coefsCnt = ocio_grading_huecurve_coefsOffsets[curveIdx * 2 + 1];
+  int coefsSets = coefsCnt / 3;
+  if (coefsSets == 0)
+  {
+    return identity_x;
+  }
+  float knStart = ocio_grading_huecurve_knots[knotsOffs];
+  float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
+  if (x <= knStart)
+  {
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+    return (x - knStart) * B + C;
+  }
+  else if (x >= knEnd)
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    float slope = 2. * A * t + B;
+    float offs = ( A * t + B ) * t + C;
+    return (x - knEnd) * slope + offs;
+  }
+  int i = 0;
+  for (i = 0; i < knotsCnt - 2; ++i)
+  {
+    if (x < ocio_grading_huecurve_knots[knotsOffs + i + 1])
+    {
+      break;
+    }
+  }
+  float A = ocio_grading_huecurve_coefs[coefsOffs + i];
+  float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets + i];
+  float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i];
+  float kn = ocio_grading_huecurve_knots[knotsOffs + i];
+  float t = x - kn;
+  return ( A * t + B ) * t + C;
+}
+
+// Declaration of the OCIO shader function
+
+float4 grading_transform(float4 inPixel)
+{
+  float4 outColor = inPixel;
+  
+  // Add GradingHueCurve forward processing
+  
+  {
+    outColor.r = ocio_grading_huecurve_evalBSplineCurve(1, outColor.r, 1.);
+    outColor.g = ocio_grading_huecurve_evalBSplineCurve(1, outColor.g, 1.);
+    outColor.b = ocio_grading_huecurve_evalBSplineCurve(1, outColor.b, 1.);
+  }
+
+  return outColor;
+}
+
+// Close class wrapper
+
+
+};
+float4 grading_transform(
+  constant int ocio_grading_huecurve_knotsOffsets[16]
+  , int ocio_grading_huecurve_knotsOffsets_count
+  , constant float ocio_grading_huecurve_knots[120]
+  , int ocio_grading_huecurve_knots_count
+  , constant int ocio_grading_huecurve_coefsOffsets[16]
+  , int ocio_grading_huecurve_coefsOffsets_count
+  , constant float ocio_grading_huecurve_coefs[360]
+  , int ocio_grading_huecurve_coefs_count
+  , bool ocio_grading_huecurve_localBypass
+  , float4 inPixel)
+{
+  return ocio_grading_transform(
+    ocio_grading_huecurve_knotsOffsets
+    , ocio_grading_huecurve_knotsOffsets_count
+    , ocio_grading_huecurve_knots
+    , ocio_grading_huecurve_knots_count
+    , ocio_grading_huecurve_coefsOffsets
+    , ocio_grading_huecurve_coefsOffsets_count
+    , ocio_grading_huecurve_coefs
+    , ocio_grading_huecurve_coefs_count
+    , ocio_grading_huecurve_localBypass
+  ).grading_transform(inPixel);
+}
+"""#)
+    case "hue.log.forward.nohsy":
+        return GradingShaderTemplate(names: ["ocio_grading_huecurve_knotsOffsets", "ocio_grading_huecurve_knots", "ocio_grading_huecurve_coefsOffsets", "ocio_grading_huecurve_coefs", "ocio_grading_huecurve_localBypass"], lengths: [16, 120, 16, 360, 0], source: #"""
+
+// Declaration of class wrapper
+
+struct ocio_grading_transform
+{
+ocio_grading_transform(
+  constant int ocio_grading_huecurve_knotsOffsets[16]
+  , int ocio_grading_huecurve_knotsOffsets_count
+  , constant float ocio_grading_huecurve_knots[120]
+  , int ocio_grading_huecurve_knots_count
+  , constant int ocio_grading_huecurve_coefsOffsets[16]
+  , int ocio_grading_huecurve_coefsOffsets_count
+  , constant float ocio_grading_huecurve_coefs[360]
+  , int ocio_grading_huecurve_coefs_count
+  , bool ocio_grading_huecurve_localBypass
+)
+{
+  for(int i = 0; i < ocio_grading_huecurve_knotsOffsets_count; ++i)
+  {
+    this->ocio_grading_huecurve_knotsOffsets[i] = ocio_grading_huecurve_knotsOffsets[i];
+  }
+  for(int i = ocio_grading_huecurve_knotsOffsets_count; i < 16; ++i)
+  {
+    this->ocio_grading_huecurve_knotsOffsets[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_knots_count; ++i)
+  {
+    this->ocio_grading_huecurve_knots[i] = ocio_grading_huecurve_knots[i];
+  }
+  for(int i = ocio_grading_huecurve_knots_count; i < 120; ++i)
+  {
+    this->ocio_grading_huecurve_knots[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_coefsOffsets_count; ++i)
+  {
+    this->ocio_grading_huecurve_coefsOffsets[i] = ocio_grading_huecurve_coefsOffsets[i];
+  }
+  for(int i = ocio_grading_huecurve_coefsOffsets_count; i < 16; ++i)
+  {
+    this->ocio_grading_huecurve_coefsOffsets[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_coefs_count; ++i)
+  {
+    this->ocio_grading_huecurve_coefs[i] = ocio_grading_huecurve_coefs[i];
+  }
+  for(int i = ocio_grading_huecurve_coefs_count; i < 360; ++i)
+  {
+    this->ocio_grading_huecurve_coefs[i] = 0;
+  }
+  this->ocio_grading_huecurve_localBypass = ocio_grading_huecurve_localBypass;
+}
+
+
+// Declaration of all variables
+
+int ocio_grading_huecurve_knotsOffsets[16];
+float ocio_grading_huecurve_knots[120];
+int ocio_grading_huecurve_coefsOffsets[16];
+float ocio_grading_huecurve_coefs[360];
+bool ocio_grading_huecurve_localBypass;
+
+
+// Declaration of all helper methods
+
+
+float ocio_grading_huecurve_evalBSplineCurve(int curveIdx, float x, float identity_x)
+{
+  int knotsOffs = ocio_grading_huecurve_knotsOffsets[curveIdx * 2];
+  int knotsCnt = ocio_grading_huecurve_knotsOffsets[curveIdx * 2 + 1];
+  int coefsOffs = ocio_grading_huecurve_coefsOffsets[curveIdx * 2];
+  int coefsCnt = ocio_grading_huecurve_coefsOffsets[curveIdx * 2 + 1];
+  int coefsSets = coefsCnt / 3;
+  if (coefsSets == 0)
+  {
+    return identity_x;
+  }
+  float knStart = ocio_grading_huecurve_knots[knotsOffs];
+  float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
+  if (x <= knStart)
+  {
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+    return (x - knStart) * B + C;
+  }
+  else if (x >= knEnd)
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    float slope = 2. * A * t + B;
+    float offs = ( A * t + B ) * t + C;
+    return (x - knEnd) * slope + offs;
+  }
+  int i = 0;
+  for (i = 0; i < knotsCnt - 2; ++i)
+  {
+    if (x < ocio_grading_huecurve_knots[knotsOffs + i + 1])
+    {
+      break;
+    }
+  }
+  float A = ocio_grading_huecurve_coefs[coefsOffs + i];
+  float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets + i];
+  float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i];
+  float kn = ocio_grading_huecurve_knots[knotsOffs + i];
+  float t = x - kn;
+  return ( A * t + B ) * t + C;
+}
+
+// Declaration of the OCIO shader function
+
+float4 grading_transform(float4 inPixel)
+{
+  float4 outColor = inPixel;
+  
+  // Add GradingHueCurve forward processing
+  
+  {
+    if (!ocio_grading_huecurve_localBypass)
+    {
+      
+      float hueSatGain = max(0., ocio_grading_huecurve_evalBSplineCurve(1, outColor.r, 1.));
+      float hueLumGain = max(0., ocio_grading_huecurve_evalBSplineCurve(2, outColor.r, 1.));
+      outColor.r = ocio_grading_huecurve_evalBSplineCurve(0, outColor.r, outColor.r);
+      outColor.g = max(0., ocio_grading_huecurve_evalBSplineCurve(4, outColor.g, outColor.g));
+      float lumSatGain = max(0., ocio_grading_huecurve_evalBSplineCurve(3, outColor.b, 1.));
+      float satGain = lumSatGain * hueSatGain;
+      outColor.g = satGain * outColor.g;
+      float satLumGain = max(0., ocio_grading_huecurve_evalBSplineCurve(6, outColor.g, 1.));
+      outColor.b = ocio_grading_huecurve_evalBSplineCurve(5, outColor.b, outColor.b);
+      
+      
+      hueLumGain = 1. - (1. - hueLumGain) * min( 1., outColor.g );
+      outColor.b = outColor.b + (hueLumGain + satLumGain - 2.) * 0.1;
+      
+      outColor.r = outColor.r - floor( outColor.r );
+      outColor.r = outColor.r + ocio_grading_huecurve_evalBSplineCurve(7, outColor.r, 0.);
+    }
+  }
+
+  return outColor;
+}
+
+// Close class wrapper
+
+
+};
+float4 grading_transform(
+  constant int ocio_grading_huecurve_knotsOffsets[16]
+  , int ocio_grading_huecurve_knotsOffsets_count
+  , constant float ocio_grading_huecurve_knots[120]
+  , int ocio_grading_huecurve_knots_count
+  , constant int ocio_grading_huecurve_coefsOffsets[16]
+  , int ocio_grading_huecurve_coefsOffsets_count
+  , constant float ocio_grading_huecurve_coefs[360]
+  , int ocio_grading_huecurve_coefs_count
+  , bool ocio_grading_huecurve_localBypass
+  , float4 inPixel)
+{
+  return ocio_grading_transform(
+    ocio_grading_huecurve_knotsOffsets
+    , ocio_grading_huecurve_knotsOffsets_count
+    , ocio_grading_huecurve_knots
+    , ocio_grading_huecurve_knots_count
+    , ocio_grading_huecurve_coefsOffsets
+    , ocio_grading_huecurve_coefsOffsets_count
+    , ocio_grading_huecurve_coefs
+    , ocio_grading_huecurve_coefs_count
+    , ocio_grading_huecurve_localBypass
+  ).grading_transform(inPixel);
+}
+"""#)
     case "hue.log.inverse":
         return GradingShaderTemplate(names: ["ocio_grading_huecurve_knotsOffsets", "ocio_grading_huecurve_knots", "ocio_grading_huecurve_coefsOffsets", "ocio_grading_huecurve_coefs", "ocio_grading_huecurve_localBypass"], lengths: [16, 120, 16, 360, 0], source: #"""
 
@@ -2136,6 +3454,8 @@ float ocio_grading_huecurve_evalBSplineCurveRevHue(int curveIdx, float x)
   float knStart = ocio_grading_huecurve_knots[knotsOffs];
   float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
   float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+  // Match the upstream CPU HueFX lower periodic bound.
+  knStartY = (curveIdx == 7) ? knStartY + knStart : knStartY;
   float knEndY;
   {
     float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
@@ -2483,6 +3803,8 @@ float ocio_grading_huecurve_evalBSplineCurveRevHue(int curveIdx, float x)
   float knStart = ocio_grading_huecurve_knots[knotsOffs];
   float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
   float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+  // Match the upstream CPU HueFX lower periodic bound.
+  knStartY = (curveIdx == 7) ? knStartY + knStart : knStartY;
   float knEndY;
   {
     float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
@@ -2542,6 +3864,592 @@ float4 grading_transform(float4 inPixel)
     outColor.r = ocio_grading_huecurve_evalBSplineCurve(1, outColor.r, 1.);
     outColor.g = ocio_grading_huecurve_evalBSplineCurve(1, outColor.g, 1.);
     outColor.b = ocio_grading_huecurve_evalBSplineCurve(1, outColor.b, 1.);
+  }
+
+  return outColor;
+}
+
+// Close class wrapper
+
+
+};
+float4 grading_transform(
+  constant int ocio_grading_huecurve_knotsOffsets[16]
+  , int ocio_grading_huecurve_knotsOffsets_count
+  , constant float ocio_grading_huecurve_knots[120]
+  , int ocio_grading_huecurve_knots_count
+  , constant int ocio_grading_huecurve_coefsOffsets[16]
+  , int ocio_grading_huecurve_coefsOffsets_count
+  , constant float ocio_grading_huecurve_coefs[360]
+  , int ocio_grading_huecurve_coefs_count
+  , bool ocio_grading_huecurve_localBypass
+  , float4 inPixel)
+{
+  return ocio_grading_transform(
+    ocio_grading_huecurve_knotsOffsets
+    , ocio_grading_huecurve_knotsOffsets_count
+    , ocio_grading_huecurve_knots
+    , ocio_grading_huecurve_knots_count
+    , ocio_grading_huecurve_coefsOffsets
+    , ocio_grading_huecurve_coefsOffsets_count
+    , ocio_grading_huecurve_coefs
+    , ocio_grading_huecurve_coefs_count
+    , ocio_grading_huecurve_localBypass
+  ).grading_transform(inPixel);
+}
+"""#)
+    case "hue.log.inverse.draw.nohsy":
+        return GradingShaderTemplate(names: ["ocio_grading_huecurve_knotsOffsets", "ocio_grading_huecurve_knots", "ocio_grading_huecurve_coefsOffsets", "ocio_grading_huecurve_coefs", "ocio_grading_huecurve_localBypass"], lengths: [16, 120, 16, 360, 0], source: #"""
+
+// Declaration of class wrapper
+
+struct ocio_grading_transform
+{
+ocio_grading_transform(
+  constant int ocio_grading_huecurve_knotsOffsets[16]
+  , int ocio_grading_huecurve_knotsOffsets_count
+  , constant float ocio_grading_huecurve_knots[120]
+  , int ocio_grading_huecurve_knots_count
+  , constant int ocio_grading_huecurve_coefsOffsets[16]
+  , int ocio_grading_huecurve_coefsOffsets_count
+  , constant float ocio_grading_huecurve_coefs[360]
+  , int ocio_grading_huecurve_coefs_count
+  , bool ocio_grading_huecurve_localBypass
+)
+{
+  for(int i = 0; i < ocio_grading_huecurve_knotsOffsets_count; ++i)
+  {
+    this->ocio_grading_huecurve_knotsOffsets[i] = ocio_grading_huecurve_knotsOffsets[i];
+  }
+  for(int i = ocio_grading_huecurve_knotsOffsets_count; i < 16; ++i)
+  {
+    this->ocio_grading_huecurve_knotsOffsets[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_knots_count; ++i)
+  {
+    this->ocio_grading_huecurve_knots[i] = ocio_grading_huecurve_knots[i];
+  }
+  for(int i = ocio_grading_huecurve_knots_count; i < 120; ++i)
+  {
+    this->ocio_grading_huecurve_knots[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_coefsOffsets_count; ++i)
+  {
+    this->ocio_grading_huecurve_coefsOffsets[i] = ocio_grading_huecurve_coefsOffsets[i];
+  }
+  for(int i = ocio_grading_huecurve_coefsOffsets_count; i < 16; ++i)
+  {
+    this->ocio_grading_huecurve_coefsOffsets[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_coefs_count; ++i)
+  {
+    this->ocio_grading_huecurve_coefs[i] = ocio_grading_huecurve_coefs[i];
+  }
+  for(int i = ocio_grading_huecurve_coefs_count; i < 360; ++i)
+  {
+    this->ocio_grading_huecurve_coefs[i] = 0;
+  }
+  this->ocio_grading_huecurve_localBypass = ocio_grading_huecurve_localBypass;
+}
+
+
+// Declaration of all variables
+
+int ocio_grading_huecurve_knotsOffsets[16];
+float ocio_grading_huecurve_knots[120];
+int ocio_grading_huecurve_coefsOffsets[16];
+float ocio_grading_huecurve_coefs[360];
+bool ocio_grading_huecurve_localBypass;
+
+
+// Declaration of all helper methods
+
+
+float ocio_grading_huecurve_evalBSplineCurve(int curveIdx, float x, float identity_x)
+{
+  int knotsOffs = ocio_grading_huecurve_knotsOffsets[curveIdx * 2];
+  int knotsCnt = ocio_grading_huecurve_knotsOffsets[curveIdx * 2 + 1];
+  int coefsOffs = ocio_grading_huecurve_coefsOffsets[curveIdx * 2];
+  int coefsCnt = ocio_grading_huecurve_coefsOffsets[curveIdx * 2 + 1];
+  int coefsSets = coefsCnt / 3;
+  if (coefsSets == 0)
+  {
+    return identity_x;
+  }
+  float knStart = ocio_grading_huecurve_knots[knotsOffs];
+  float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
+  if (x <= knStart)
+  {
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+    return (x - knStart) * B + C;
+  }
+  else if (x >= knEnd)
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    float slope = 2. * A * t + B;
+    float offs = ( A * t + B ) * t + C;
+    return (x - knEnd) * slope + offs;
+  }
+  int i = 0;
+  for (i = 0; i < knotsCnt - 2; ++i)
+  {
+    if (x < ocio_grading_huecurve_knots[knotsOffs + i + 1])
+    {
+      break;
+    }
+  }
+  float A = ocio_grading_huecurve_coefs[coefsOffs + i];
+  float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets + i];
+  float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i];
+  float kn = ocio_grading_huecurve_knots[knotsOffs + i];
+  float t = x - kn;
+  return ( A * t + B ) * t + C;
+}
+
+float ocio_grading_huecurve_evalBSplineCurveRev(int curveIdx, float x)
+{
+  int knotsOffs = ocio_grading_huecurve_knotsOffsets[curveIdx * 2];
+  int knotsCnt = ocio_grading_huecurve_knotsOffsets[curveIdx * 2 + 1];
+  int coefsOffs = ocio_grading_huecurve_coefsOffsets[curveIdx * 2];
+  int coefsCnt = ocio_grading_huecurve_coefsOffsets[curveIdx * 2 + 1];
+  int coefsSets = coefsCnt / 3;
+  if (coefsSets == 0)
+  {
+    return x;
+  }
+  float knStart = ocio_grading_huecurve_knots[knotsOffs];
+  float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
+  float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+  float knEndY;
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    knEndY = ( A * t + B ) * t + C;
+  }
+  if (x <= knStartY)
+  {
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+    return abs(B) < 1e-5 ? knStart : (x - C) / B + knStart;
+  }
+  else if (x >= knEndY)
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    float slope = 2. * A * t + B;
+    float offs = ( A * t + B ) * t + C;
+    return abs(slope) < 1e-5 ? knEnd : (x - offs) / slope + knEnd;
+  }
+  int i = 0;
+  for (i = 0; i < knotsCnt - 2; ++i)
+  {
+    if (x < ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i + 1])
+    {
+      break;
+    }
+  }
+  float A = ocio_grading_huecurve_coefs[coefsOffs + i];
+  float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets + i];
+  float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i];
+  float kn = ocio_grading_huecurve_knots[knotsOffs + i];
+  float C0 = C - x;
+  float discrim = sqrt(B * B - 4. * A * C0);
+  float denom = discrim + B;
+  if (abs(denom) < 1e-5)
+  {
+    return abs(B) < 1e-5 ? kn : kn + (-C0 / B);
+  }
+  return kn + (-2. * C0) / denom;
+}
+
+float ocio_grading_huecurve_evalBSplineCurveRevHue(int curveIdx, float x)
+{
+  int knotsOffs = ocio_grading_huecurve_knotsOffsets[curveIdx * 2];
+  int knotsCnt = ocio_grading_huecurve_knotsOffsets[curveIdx * 2 + 1];
+  int coefsOffs = ocio_grading_huecurve_coefsOffsets[curveIdx * 2];
+  int coefsCnt = ocio_grading_huecurve_coefsOffsets[curveIdx * 2 + 1];
+  int coefsSets = coefsCnt / 3;
+  if (coefsSets == 0)
+  {
+    return x;
+  }
+  float knStart = ocio_grading_huecurve_knots[knotsOffs];
+  float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
+  float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+  // Match the upstream CPU HueFX lower periodic bound.
+  knStartY = (curveIdx == 7) ? knStartY + knStart : knStartY;
+  float knEndY;
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    knEndY = ( A * t + B ) * t + C;
+    knEndY = (curveIdx == 7) ? knEndY + knEnd : knEndY;
+  }
+  if (x < knStartY)
+  {
+    x = x + ceil(knStartY - x);
+  }
+  else if (x > knEndY)
+  {
+    x = x - ceil(x - knEndY);
+  }
+  int i = 0;
+  for (i = 0; i < knotsCnt - 2; ++i)
+  {
+    float curve_x = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i + 1];
+    curve_x = (curveIdx == 7) ? curve_x + ocio_grading_huecurve_knots[knotsOffs + i + 1] : curve_x;
+    if (x < curve_x)
+    {
+      break;
+    }
+  }
+  float A = ocio_grading_huecurve_coefs[coefsOffs + i];
+  float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets + i];
+  float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i];
+  float kn = ocio_grading_huecurve_knots[knotsOffs + i];
+  if (curveIdx == 7)
+  {
+    C = C + kn;
+    B = B + 1.;
+  }
+  float C0 = C - x;
+  float discrim = sqrt(B * B - 4. * A * C0);
+  float denom = discrim + B;
+  if (abs(denom) < 1e-5)
+  {
+    return abs(B) < 1e-5 ? kn : kn + (-C0 / B);
+  }
+  return kn + (-2. * C0) / denom;
+}
+
+// Declaration of the OCIO shader function
+
+float4 grading_transform(float4 inPixel)
+{
+  float4 outColor = inPixel;
+  
+  // Add GradingHueCurve inverse processing
+  
+  {
+    outColor.r = ocio_grading_huecurve_evalBSplineCurve(1, outColor.r, 1.);
+    outColor.g = ocio_grading_huecurve_evalBSplineCurve(1, outColor.g, 1.);
+    outColor.b = ocio_grading_huecurve_evalBSplineCurve(1, outColor.b, 1.);
+  }
+
+  return outColor;
+}
+
+// Close class wrapper
+
+
+};
+float4 grading_transform(
+  constant int ocio_grading_huecurve_knotsOffsets[16]
+  , int ocio_grading_huecurve_knotsOffsets_count
+  , constant float ocio_grading_huecurve_knots[120]
+  , int ocio_grading_huecurve_knots_count
+  , constant int ocio_grading_huecurve_coefsOffsets[16]
+  , int ocio_grading_huecurve_coefsOffsets_count
+  , constant float ocio_grading_huecurve_coefs[360]
+  , int ocio_grading_huecurve_coefs_count
+  , bool ocio_grading_huecurve_localBypass
+  , float4 inPixel)
+{
+  return ocio_grading_transform(
+    ocio_grading_huecurve_knotsOffsets
+    , ocio_grading_huecurve_knotsOffsets_count
+    , ocio_grading_huecurve_knots
+    , ocio_grading_huecurve_knots_count
+    , ocio_grading_huecurve_coefsOffsets
+    , ocio_grading_huecurve_coefsOffsets_count
+    , ocio_grading_huecurve_coefs
+    , ocio_grading_huecurve_coefs_count
+    , ocio_grading_huecurve_localBypass
+  ).grading_transform(inPixel);
+}
+"""#)
+    case "hue.log.inverse.nohsy":
+        return GradingShaderTemplate(names: ["ocio_grading_huecurve_knotsOffsets", "ocio_grading_huecurve_knots", "ocio_grading_huecurve_coefsOffsets", "ocio_grading_huecurve_coefs", "ocio_grading_huecurve_localBypass"], lengths: [16, 120, 16, 360, 0], source: #"""
+
+// Declaration of class wrapper
+
+struct ocio_grading_transform
+{
+ocio_grading_transform(
+  constant int ocio_grading_huecurve_knotsOffsets[16]
+  , int ocio_grading_huecurve_knotsOffsets_count
+  , constant float ocio_grading_huecurve_knots[120]
+  , int ocio_grading_huecurve_knots_count
+  , constant int ocio_grading_huecurve_coefsOffsets[16]
+  , int ocio_grading_huecurve_coefsOffsets_count
+  , constant float ocio_grading_huecurve_coefs[360]
+  , int ocio_grading_huecurve_coefs_count
+  , bool ocio_grading_huecurve_localBypass
+)
+{
+  for(int i = 0; i < ocio_grading_huecurve_knotsOffsets_count; ++i)
+  {
+    this->ocio_grading_huecurve_knotsOffsets[i] = ocio_grading_huecurve_knotsOffsets[i];
+  }
+  for(int i = ocio_grading_huecurve_knotsOffsets_count; i < 16; ++i)
+  {
+    this->ocio_grading_huecurve_knotsOffsets[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_knots_count; ++i)
+  {
+    this->ocio_grading_huecurve_knots[i] = ocio_grading_huecurve_knots[i];
+  }
+  for(int i = ocio_grading_huecurve_knots_count; i < 120; ++i)
+  {
+    this->ocio_grading_huecurve_knots[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_coefsOffsets_count; ++i)
+  {
+    this->ocio_grading_huecurve_coefsOffsets[i] = ocio_grading_huecurve_coefsOffsets[i];
+  }
+  for(int i = ocio_grading_huecurve_coefsOffsets_count; i < 16; ++i)
+  {
+    this->ocio_grading_huecurve_coefsOffsets[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_coefs_count; ++i)
+  {
+    this->ocio_grading_huecurve_coefs[i] = ocio_grading_huecurve_coefs[i];
+  }
+  for(int i = ocio_grading_huecurve_coefs_count; i < 360; ++i)
+  {
+    this->ocio_grading_huecurve_coefs[i] = 0;
+  }
+  this->ocio_grading_huecurve_localBypass = ocio_grading_huecurve_localBypass;
+}
+
+
+// Declaration of all variables
+
+int ocio_grading_huecurve_knotsOffsets[16];
+float ocio_grading_huecurve_knots[120];
+int ocio_grading_huecurve_coefsOffsets[16];
+float ocio_grading_huecurve_coefs[360];
+bool ocio_grading_huecurve_localBypass;
+
+
+// Declaration of all helper methods
+
+
+float ocio_grading_huecurve_evalBSplineCurve(int curveIdx, float x, float identity_x)
+{
+  int knotsOffs = ocio_grading_huecurve_knotsOffsets[curveIdx * 2];
+  int knotsCnt = ocio_grading_huecurve_knotsOffsets[curveIdx * 2 + 1];
+  int coefsOffs = ocio_grading_huecurve_coefsOffsets[curveIdx * 2];
+  int coefsCnt = ocio_grading_huecurve_coefsOffsets[curveIdx * 2 + 1];
+  int coefsSets = coefsCnt / 3;
+  if (coefsSets == 0)
+  {
+    return identity_x;
+  }
+  float knStart = ocio_grading_huecurve_knots[knotsOffs];
+  float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
+  if (x <= knStart)
+  {
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+    return (x - knStart) * B + C;
+  }
+  else if (x >= knEnd)
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    float slope = 2. * A * t + B;
+    float offs = ( A * t + B ) * t + C;
+    return (x - knEnd) * slope + offs;
+  }
+  int i = 0;
+  for (i = 0; i < knotsCnt - 2; ++i)
+  {
+    if (x < ocio_grading_huecurve_knots[knotsOffs + i + 1])
+    {
+      break;
+    }
+  }
+  float A = ocio_grading_huecurve_coefs[coefsOffs + i];
+  float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets + i];
+  float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i];
+  float kn = ocio_grading_huecurve_knots[knotsOffs + i];
+  float t = x - kn;
+  return ( A * t + B ) * t + C;
+}
+
+float ocio_grading_huecurve_evalBSplineCurveRev(int curveIdx, float x)
+{
+  int knotsOffs = ocio_grading_huecurve_knotsOffsets[curveIdx * 2];
+  int knotsCnt = ocio_grading_huecurve_knotsOffsets[curveIdx * 2 + 1];
+  int coefsOffs = ocio_grading_huecurve_coefsOffsets[curveIdx * 2];
+  int coefsCnt = ocio_grading_huecurve_coefsOffsets[curveIdx * 2 + 1];
+  int coefsSets = coefsCnt / 3;
+  if (coefsSets == 0)
+  {
+    return x;
+  }
+  float knStart = ocio_grading_huecurve_knots[knotsOffs];
+  float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
+  float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+  float knEndY;
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    knEndY = ( A * t + B ) * t + C;
+  }
+  if (x <= knStartY)
+  {
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+    return abs(B) < 1e-5 ? knStart : (x - C) / B + knStart;
+  }
+  else if (x >= knEndY)
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    float slope = 2. * A * t + B;
+    float offs = ( A * t + B ) * t + C;
+    return abs(slope) < 1e-5 ? knEnd : (x - offs) / slope + knEnd;
+  }
+  int i = 0;
+  for (i = 0; i < knotsCnt - 2; ++i)
+  {
+    if (x < ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i + 1])
+    {
+      break;
+    }
+  }
+  float A = ocio_grading_huecurve_coefs[coefsOffs + i];
+  float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets + i];
+  float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i];
+  float kn = ocio_grading_huecurve_knots[knotsOffs + i];
+  float C0 = C - x;
+  float discrim = sqrt(B * B - 4. * A * C0);
+  float denom = discrim + B;
+  if (abs(denom) < 1e-5)
+  {
+    return abs(B) < 1e-5 ? kn : kn + (-C0 / B);
+  }
+  return kn + (-2. * C0) / denom;
+}
+
+float ocio_grading_huecurve_evalBSplineCurveRevHue(int curveIdx, float x)
+{
+  int knotsOffs = ocio_grading_huecurve_knotsOffsets[curveIdx * 2];
+  int knotsCnt = ocio_grading_huecurve_knotsOffsets[curveIdx * 2 + 1];
+  int coefsOffs = ocio_grading_huecurve_coefsOffsets[curveIdx * 2];
+  int coefsCnt = ocio_grading_huecurve_coefsOffsets[curveIdx * 2 + 1];
+  int coefsSets = coefsCnt / 3;
+  if (coefsSets == 0)
+  {
+    return x;
+  }
+  float knStart = ocio_grading_huecurve_knots[knotsOffs];
+  float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
+  float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+  // Match the upstream CPU HueFX lower periodic bound.
+  knStartY = (curveIdx == 7) ? knStartY + knStart : knStartY;
+  float knEndY;
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    knEndY = ( A * t + B ) * t + C;
+    knEndY = (curveIdx == 7) ? knEndY + knEnd : knEndY;
+  }
+  if (x < knStartY)
+  {
+    x = x + ceil(knStartY - x);
+  }
+  else if (x > knEndY)
+  {
+    x = x - ceil(x - knEndY);
+  }
+  int i = 0;
+  for (i = 0; i < knotsCnt - 2; ++i)
+  {
+    float curve_x = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i + 1];
+    curve_x = (curveIdx == 7) ? curve_x + ocio_grading_huecurve_knots[knotsOffs + i + 1] : curve_x;
+    if (x < curve_x)
+    {
+      break;
+    }
+  }
+  float A = ocio_grading_huecurve_coefs[coefsOffs + i];
+  float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets + i];
+  float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i];
+  float kn = ocio_grading_huecurve_knots[knotsOffs + i];
+  if (curveIdx == 7)
+  {
+    C = C + kn;
+    B = B + 1.;
+  }
+  float C0 = C - x;
+  float discrim = sqrt(B * B - 4. * A * C0);
+  float denom = discrim + B;
+  if (abs(denom) < 1e-5)
+  {
+    return abs(B) < 1e-5 ? kn : kn + (-C0 / B);
+  }
+  return kn + (-2. * C0) / denom;
+}
+
+// Declaration of the OCIO shader function
+
+float4 grading_transform(float4 inPixel)
+{
+  float4 outColor = inPixel;
+  
+  // Add GradingHueCurve inverse processing
+  
+  {
+    if (!ocio_grading_huecurve_localBypass)
+    {
+      outColor.r = ocio_grading_huecurve_evalBSplineCurveRevHue(7, outColor.r);
+      outColor.r = ocio_grading_huecurve_evalBSplineCurveRevHue(0, outColor.r);
+      
+      outColor.r = outColor.r - floor( outColor.r );
+      float hueSatGain = max(0., ocio_grading_huecurve_evalBSplineCurve(1, outColor.r, 1.));
+      float hueLumGain = max(0., ocio_grading_huecurve_evalBSplineCurve(2, outColor.r, 1.));
+      outColor.g = max(0., outColor.g);
+      float satLumGain = max(0., ocio_grading_huecurve_evalBSplineCurve(6, outColor.g, 1.));
+      
+      hueLumGain = 1. - (1. - hueLumGain) * min( 1., outColor.g );
+      outColor.b = outColor.b - (hueLumGain + satLumGain - 2.) * 0.1;
+      
+      outColor.b = ocio_grading_huecurve_evalBSplineCurveRev(5, outColor.b);
+      
+      float lumSatGain = max(0., ocio_grading_huecurve_evalBSplineCurve(3, outColor.b, 1.));
+      float satGain = max(0.01, lumSatGain * hueSatGain);
+      outColor.g = outColor.g / satGain;
+      outColor.g = max(0., ocio_grading_huecurve_evalBSplineCurveRev(4, outColor.g));
+    }
   }
 
   return outColor;
@@ -2736,7 +4644,8 @@ float4 grading_transform(float4 inPixel)
       
       
       hueLumGain = 1. - (1. - hueLumGain) * min( 1., outColor.g );
-      outColor.b = outColor.b * hueLumGain * satLumGain;
+      // Match the upstream CPU video luminance operation.
+      outColor.b = outColor.b + (hueLumGain + satLumGain - 2.) * 0.1;
       
       outColor.r = outColor.r - floor( outColor.r );
       outColor.r = outColor.r + ocio_grading_huecurve_evalBSplineCurve(7, outColor.r, 0.);
@@ -2924,6 +4833,342 @@ float4 grading_transform(float4 inPixel)
     outColor.r = ocio_grading_huecurve_evalBSplineCurve(1, outColor.r, 1.);
     outColor.g = ocio_grading_huecurve_evalBSplineCurve(1, outColor.g, 1.);
     outColor.b = ocio_grading_huecurve_evalBSplineCurve(1, outColor.b, 1.);
+  }
+
+  return outColor;
+}
+
+// Close class wrapper
+
+
+};
+float4 grading_transform(
+  constant int ocio_grading_huecurve_knotsOffsets[16]
+  , int ocio_grading_huecurve_knotsOffsets_count
+  , constant float ocio_grading_huecurve_knots[120]
+  , int ocio_grading_huecurve_knots_count
+  , constant int ocio_grading_huecurve_coefsOffsets[16]
+  , int ocio_grading_huecurve_coefsOffsets_count
+  , constant float ocio_grading_huecurve_coefs[360]
+  , int ocio_grading_huecurve_coefs_count
+  , bool ocio_grading_huecurve_localBypass
+  , float4 inPixel)
+{
+  return ocio_grading_transform(
+    ocio_grading_huecurve_knotsOffsets
+    , ocio_grading_huecurve_knotsOffsets_count
+    , ocio_grading_huecurve_knots
+    , ocio_grading_huecurve_knots_count
+    , ocio_grading_huecurve_coefsOffsets
+    , ocio_grading_huecurve_coefsOffsets_count
+    , ocio_grading_huecurve_coefs
+    , ocio_grading_huecurve_coefs_count
+    , ocio_grading_huecurve_localBypass
+  ).grading_transform(inPixel);
+}
+"""#)
+    case "hue.video.forward.draw.nohsy":
+        return GradingShaderTemplate(names: ["ocio_grading_huecurve_knotsOffsets", "ocio_grading_huecurve_knots", "ocio_grading_huecurve_coefsOffsets", "ocio_grading_huecurve_coefs", "ocio_grading_huecurve_localBypass"], lengths: [16, 120, 16, 360, 0], source: #"""
+
+// Declaration of class wrapper
+
+struct ocio_grading_transform
+{
+ocio_grading_transform(
+  constant int ocio_grading_huecurve_knotsOffsets[16]
+  , int ocio_grading_huecurve_knotsOffsets_count
+  , constant float ocio_grading_huecurve_knots[120]
+  , int ocio_grading_huecurve_knots_count
+  , constant int ocio_grading_huecurve_coefsOffsets[16]
+  , int ocio_grading_huecurve_coefsOffsets_count
+  , constant float ocio_grading_huecurve_coefs[360]
+  , int ocio_grading_huecurve_coefs_count
+  , bool ocio_grading_huecurve_localBypass
+)
+{
+  for(int i = 0; i < ocio_grading_huecurve_knotsOffsets_count; ++i)
+  {
+    this->ocio_grading_huecurve_knotsOffsets[i] = ocio_grading_huecurve_knotsOffsets[i];
+  }
+  for(int i = ocio_grading_huecurve_knotsOffsets_count; i < 16; ++i)
+  {
+    this->ocio_grading_huecurve_knotsOffsets[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_knots_count; ++i)
+  {
+    this->ocio_grading_huecurve_knots[i] = ocio_grading_huecurve_knots[i];
+  }
+  for(int i = ocio_grading_huecurve_knots_count; i < 120; ++i)
+  {
+    this->ocio_grading_huecurve_knots[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_coefsOffsets_count; ++i)
+  {
+    this->ocio_grading_huecurve_coefsOffsets[i] = ocio_grading_huecurve_coefsOffsets[i];
+  }
+  for(int i = ocio_grading_huecurve_coefsOffsets_count; i < 16; ++i)
+  {
+    this->ocio_grading_huecurve_coefsOffsets[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_coefs_count; ++i)
+  {
+    this->ocio_grading_huecurve_coefs[i] = ocio_grading_huecurve_coefs[i];
+  }
+  for(int i = ocio_grading_huecurve_coefs_count; i < 360; ++i)
+  {
+    this->ocio_grading_huecurve_coefs[i] = 0;
+  }
+  this->ocio_grading_huecurve_localBypass = ocio_grading_huecurve_localBypass;
+}
+
+
+// Declaration of all variables
+
+int ocio_grading_huecurve_knotsOffsets[16];
+float ocio_grading_huecurve_knots[120];
+int ocio_grading_huecurve_coefsOffsets[16];
+float ocio_grading_huecurve_coefs[360];
+bool ocio_grading_huecurve_localBypass;
+
+
+// Declaration of all helper methods
+
+
+float ocio_grading_huecurve_evalBSplineCurve(int curveIdx, float x, float identity_x)
+{
+  int knotsOffs = ocio_grading_huecurve_knotsOffsets[curveIdx * 2];
+  int knotsCnt = ocio_grading_huecurve_knotsOffsets[curveIdx * 2 + 1];
+  int coefsOffs = ocio_grading_huecurve_coefsOffsets[curveIdx * 2];
+  int coefsCnt = ocio_grading_huecurve_coefsOffsets[curveIdx * 2 + 1];
+  int coefsSets = coefsCnt / 3;
+  if (coefsSets == 0)
+  {
+    return identity_x;
+  }
+  float knStart = ocio_grading_huecurve_knots[knotsOffs];
+  float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
+  if (x <= knStart)
+  {
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+    return (x - knStart) * B + C;
+  }
+  else if (x >= knEnd)
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    float slope = 2. * A * t + B;
+    float offs = ( A * t + B ) * t + C;
+    return (x - knEnd) * slope + offs;
+  }
+  int i = 0;
+  for (i = 0; i < knotsCnt - 2; ++i)
+  {
+    if (x < ocio_grading_huecurve_knots[knotsOffs + i + 1])
+    {
+      break;
+    }
+  }
+  float A = ocio_grading_huecurve_coefs[coefsOffs + i];
+  float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets + i];
+  float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i];
+  float kn = ocio_grading_huecurve_knots[knotsOffs + i];
+  float t = x - kn;
+  return ( A * t + B ) * t + C;
+}
+
+// Declaration of the OCIO shader function
+
+float4 grading_transform(float4 inPixel)
+{
+  float4 outColor = inPixel;
+  
+  // Add GradingHueCurve forward processing
+  
+  {
+    outColor.r = ocio_grading_huecurve_evalBSplineCurve(1, outColor.r, 1.);
+    outColor.g = ocio_grading_huecurve_evalBSplineCurve(1, outColor.g, 1.);
+    outColor.b = ocio_grading_huecurve_evalBSplineCurve(1, outColor.b, 1.);
+  }
+
+  return outColor;
+}
+
+// Close class wrapper
+
+
+};
+float4 grading_transform(
+  constant int ocio_grading_huecurve_knotsOffsets[16]
+  , int ocio_grading_huecurve_knotsOffsets_count
+  , constant float ocio_grading_huecurve_knots[120]
+  , int ocio_grading_huecurve_knots_count
+  , constant int ocio_grading_huecurve_coefsOffsets[16]
+  , int ocio_grading_huecurve_coefsOffsets_count
+  , constant float ocio_grading_huecurve_coefs[360]
+  , int ocio_grading_huecurve_coefs_count
+  , bool ocio_grading_huecurve_localBypass
+  , float4 inPixel)
+{
+  return ocio_grading_transform(
+    ocio_grading_huecurve_knotsOffsets
+    , ocio_grading_huecurve_knotsOffsets_count
+    , ocio_grading_huecurve_knots
+    , ocio_grading_huecurve_knots_count
+    , ocio_grading_huecurve_coefsOffsets
+    , ocio_grading_huecurve_coefsOffsets_count
+    , ocio_grading_huecurve_coefs
+    , ocio_grading_huecurve_coefs_count
+    , ocio_grading_huecurve_localBypass
+  ).grading_transform(inPixel);
+}
+"""#)
+    case "hue.video.forward.nohsy":
+        return GradingShaderTemplate(names: ["ocio_grading_huecurve_knotsOffsets", "ocio_grading_huecurve_knots", "ocio_grading_huecurve_coefsOffsets", "ocio_grading_huecurve_coefs", "ocio_grading_huecurve_localBypass"], lengths: [16, 120, 16, 360, 0], source: #"""
+
+// Declaration of class wrapper
+
+struct ocio_grading_transform
+{
+ocio_grading_transform(
+  constant int ocio_grading_huecurve_knotsOffsets[16]
+  , int ocio_grading_huecurve_knotsOffsets_count
+  , constant float ocio_grading_huecurve_knots[120]
+  , int ocio_grading_huecurve_knots_count
+  , constant int ocio_grading_huecurve_coefsOffsets[16]
+  , int ocio_grading_huecurve_coefsOffsets_count
+  , constant float ocio_grading_huecurve_coefs[360]
+  , int ocio_grading_huecurve_coefs_count
+  , bool ocio_grading_huecurve_localBypass
+)
+{
+  for(int i = 0; i < ocio_grading_huecurve_knotsOffsets_count; ++i)
+  {
+    this->ocio_grading_huecurve_knotsOffsets[i] = ocio_grading_huecurve_knotsOffsets[i];
+  }
+  for(int i = ocio_grading_huecurve_knotsOffsets_count; i < 16; ++i)
+  {
+    this->ocio_grading_huecurve_knotsOffsets[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_knots_count; ++i)
+  {
+    this->ocio_grading_huecurve_knots[i] = ocio_grading_huecurve_knots[i];
+  }
+  for(int i = ocio_grading_huecurve_knots_count; i < 120; ++i)
+  {
+    this->ocio_grading_huecurve_knots[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_coefsOffsets_count; ++i)
+  {
+    this->ocio_grading_huecurve_coefsOffsets[i] = ocio_grading_huecurve_coefsOffsets[i];
+  }
+  for(int i = ocio_grading_huecurve_coefsOffsets_count; i < 16; ++i)
+  {
+    this->ocio_grading_huecurve_coefsOffsets[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_coefs_count; ++i)
+  {
+    this->ocio_grading_huecurve_coefs[i] = ocio_grading_huecurve_coefs[i];
+  }
+  for(int i = ocio_grading_huecurve_coefs_count; i < 360; ++i)
+  {
+    this->ocio_grading_huecurve_coefs[i] = 0;
+  }
+  this->ocio_grading_huecurve_localBypass = ocio_grading_huecurve_localBypass;
+}
+
+
+// Declaration of all variables
+
+int ocio_grading_huecurve_knotsOffsets[16];
+float ocio_grading_huecurve_knots[120];
+int ocio_grading_huecurve_coefsOffsets[16];
+float ocio_grading_huecurve_coefs[360];
+bool ocio_grading_huecurve_localBypass;
+
+
+// Declaration of all helper methods
+
+
+float ocio_grading_huecurve_evalBSplineCurve(int curveIdx, float x, float identity_x)
+{
+  int knotsOffs = ocio_grading_huecurve_knotsOffsets[curveIdx * 2];
+  int knotsCnt = ocio_grading_huecurve_knotsOffsets[curveIdx * 2 + 1];
+  int coefsOffs = ocio_grading_huecurve_coefsOffsets[curveIdx * 2];
+  int coefsCnt = ocio_grading_huecurve_coefsOffsets[curveIdx * 2 + 1];
+  int coefsSets = coefsCnt / 3;
+  if (coefsSets == 0)
+  {
+    return identity_x;
+  }
+  float knStart = ocio_grading_huecurve_knots[knotsOffs];
+  float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
+  if (x <= knStart)
+  {
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+    return (x - knStart) * B + C;
+  }
+  else if (x >= knEnd)
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    float slope = 2. * A * t + B;
+    float offs = ( A * t + B ) * t + C;
+    return (x - knEnd) * slope + offs;
+  }
+  int i = 0;
+  for (i = 0; i < knotsCnt - 2; ++i)
+  {
+    if (x < ocio_grading_huecurve_knots[knotsOffs + i + 1])
+    {
+      break;
+    }
+  }
+  float A = ocio_grading_huecurve_coefs[coefsOffs + i];
+  float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets + i];
+  float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i];
+  float kn = ocio_grading_huecurve_knots[knotsOffs + i];
+  float t = x - kn;
+  return ( A * t + B ) * t + C;
+}
+
+// Declaration of the OCIO shader function
+
+float4 grading_transform(float4 inPixel)
+{
+  float4 outColor = inPixel;
+  
+  // Add GradingHueCurve forward processing
+  
+  {
+    if (!ocio_grading_huecurve_localBypass)
+    {
+      
+      float hueSatGain = max(0., ocio_grading_huecurve_evalBSplineCurve(1, outColor.r, 1.));
+      float hueLumGain = max(0., ocio_grading_huecurve_evalBSplineCurve(2, outColor.r, 1.));
+      outColor.r = ocio_grading_huecurve_evalBSplineCurve(0, outColor.r, outColor.r);
+      outColor.g = max(0., ocio_grading_huecurve_evalBSplineCurve(4, outColor.g, outColor.g));
+      float lumSatGain = max(0., ocio_grading_huecurve_evalBSplineCurve(3, outColor.b, 1.));
+      float satGain = lumSatGain * hueSatGain;
+      outColor.g = satGain * outColor.g;
+      float satLumGain = max(0., ocio_grading_huecurve_evalBSplineCurve(6, outColor.g, 1.));
+      outColor.b = ocio_grading_huecurve_evalBSplineCurve(5, outColor.b, outColor.b);
+      
+      
+      hueLumGain = 1. - (1. - hueLumGain) * min( 1., outColor.g );
+      // Match the upstream CPU video luminance operation.
+      outColor.b = outColor.b + (hueLumGain + satLumGain - 2.) * 0.1;
+      
+      outColor.r = outColor.r - floor( outColor.r );
+      outColor.r = outColor.r + ocio_grading_huecurve_evalBSplineCurve(7, outColor.r, 0.);
+    }
   }
 
   return outColor;
@@ -3147,6 +5392,8 @@ float ocio_grading_huecurve_evalBSplineCurveRevHue(int curveIdx, float x)
   float knStart = ocio_grading_huecurve_knots[knotsOffs];
   float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
   float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+  // Match the upstream CPU HueFX lower periodic bound.
+  knStartY = (curveIdx == 7) ? knStartY + knStart : knStartY;
   float knEndY;
   {
     float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
@@ -3238,7 +5485,8 @@ float4 grading_transform(float4 inPixel)
       float satLumGain = max(0., ocio_grading_huecurve_evalBSplineCurve(6, outColor.g, 1.));
       
       hueLumGain = 1. - (1. - hueLumGain) * min( 1., outColor.g );
-      outColor.b = outColor.b / max(0.01, hueLumGain * satLumGain);
+      // Match the upstream CPU video luminance operation.
+      outColor.b = outColor.b - (hueLumGain + satLumGain - 2.) * 0.1;
       
       outColor.b = ocio_grading_huecurve_evalBSplineCurveRev(5, outColor.b);
       
@@ -3494,6 +5742,8 @@ float ocio_grading_huecurve_evalBSplineCurveRevHue(int curveIdx, float x)
   float knStart = ocio_grading_huecurve_knots[knotsOffs];
   float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
   float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+  // Match the upstream CPU HueFX lower periodic bound.
+  knStartY = (curveIdx == 7) ? knStartY + knStart : knStartY;
   float knEndY;
   {
     float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
@@ -3553,6 +5803,593 @@ float4 grading_transform(float4 inPixel)
     outColor.r = ocio_grading_huecurve_evalBSplineCurve(1, outColor.r, 1.);
     outColor.g = ocio_grading_huecurve_evalBSplineCurve(1, outColor.g, 1.);
     outColor.b = ocio_grading_huecurve_evalBSplineCurve(1, outColor.b, 1.);
+  }
+
+  return outColor;
+}
+
+// Close class wrapper
+
+
+};
+float4 grading_transform(
+  constant int ocio_grading_huecurve_knotsOffsets[16]
+  , int ocio_grading_huecurve_knotsOffsets_count
+  , constant float ocio_grading_huecurve_knots[120]
+  , int ocio_grading_huecurve_knots_count
+  , constant int ocio_grading_huecurve_coefsOffsets[16]
+  , int ocio_grading_huecurve_coefsOffsets_count
+  , constant float ocio_grading_huecurve_coefs[360]
+  , int ocio_grading_huecurve_coefs_count
+  , bool ocio_grading_huecurve_localBypass
+  , float4 inPixel)
+{
+  return ocio_grading_transform(
+    ocio_grading_huecurve_knotsOffsets
+    , ocio_grading_huecurve_knotsOffsets_count
+    , ocio_grading_huecurve_knots
+    , ocio_grading_huecurve_knots_count
+    , ocio_grading_huecurve_coefsOffsets
+    , ocio_grading_huecurve_coefsOffsets_count
+    , ocio_grading_huecurve_coefs
+    , ocio_grading_huecurve_coefs_count
+    , ocio_grading_huecurve_localBypass
+  ).grading_transform(inPixel);
+}
+"""#)
+    case "hue.video.inverse.draw.nohsy":
+        return GradingShaderTemplate(names: ["ocio_grading_huecurve_knotsOffsets", "ocio_grading_huecurve_knots", "ocio_grading_huecurve_coefsOffsets", "ocio_grading_huecurve_coefs", "ocio_grading_huecurve_localBypass"], lengths: [16, 120, 16, 360, 0], source: #"""
+
+// Declaration of class wrapper
+
+struct ocio_grading_transform
+{
+ocio_grading_transform(
+  constant int ocio_grading_huecurve_knotsOffsets[16]
+  , int ocio_grading_huecurve_knotsOffsets_count
+  , constant float ocio_grading_huecurve_knots[120]
+  , int ocio_grading_huecurve_knots_count
+  , constant int ocio_grading_huecurve_coefsOffsets[16]
+  , int ocio_grading_huecurve_coefsOffsets_count
+  , constant float ocio_grading_huecurve_coefs[360]
+  , int ocio_grading_huecurve_coefs_count
+  , bool ocio_grading_huecurve_localBypass
+)
+{
+  for(int i = 0; i < ocio_grading_huecurve_knotsOffsets_count; ++i)
+  {
+    this->ocio_grading_huecurve_knotsOffsets[i] = ocio_grading_huecurve_knotsOffsets[i];
+  }
+  for(int i = ocio_grading_huecurve_knotsOffsets_count; i < 16; ++i)
+  {
+    this->ocio_grading_huecurve_knotsOffsets[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_knots_count; ++i)
+  {
+    this->ocio_grading_huecurve_knots[i] = ocio_grading_huecurve_knots[i];
+  }
+  for(int i = ocio_grading_huecurve_knots_count; i < 120; ++i)
+  {
+    this->ocio_grading_huecurve_knots[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_coefsOffsets_count; ++i)
+  {
+    this->ocio_grading_huecurve_coefsOffsets[i] = ocio_grading_huecurve_coefsOffsets[i];
+  }
+  for(int i = ocio_grading_huecurve_coefsOffsets_count; i < 16; ++i)
+  {
+    this->ocio_grading_huecurve_coefsOffsets[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_coefs_count; ++i)
+  {
+    this->ocio_grading_huecurve_coefs[i] = ocio_grading_huecurve_coefs[i];
+  }
+  for(int i = ocio_grading_huecurve_coefs_count; i < 360; ++i)
+  {
+    this->ocio_grading_huecurve_coefs[i] = 0;
+  }
+  this->ocio_grading_huecurve_localBypass = ocio_grading_huecurve_localBypass;
+}
+
+
+// Declaration of all variables
+
+int ocio_grading_huecurve_knotsOffsets[16];
+float ocio_grading_huecurve_knots[120];
+int ocio_grading_huecurve_coefsOffsets[16];
+float ocio_grading_huecurve_coefs[360];
+bool ocio_grading_huecurve_localBypass;
+
+
+// Declaration of all helper methods
+
+
+float ocio_grading_huecurve_evalBSplineCurve(int curveIdx, float x, float identity_x)
+{
+  int knotsOffs = ocio_grading_huecurve_knotsOffsets[curveIdx * 2];
+  int knotsCnt = ocio_grading_huecurve_knotsOffsets[curveIdx * 2 + 1];
+  int coefsOffs = ocio_grading_huecurve_coefsOffsets[curveIdx * 2];
+  int coefsCnt = ocio_grading_huecurve_coefsOffsets[curveIdx * 2 + 1];
+  int coefsSets = coefsCnt / 3;
+  if (coefsSets == 0)
+  {
+    return identity_x;
+  }
+  float knStart = ocio_grading_huecurve_knots[knotsOffs];
+  float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
+  if (x <= knStart)
+  {
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+    return (x - knStart) * B + C;
+  }
+  else if (x >= knEnd)
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    float slope = 2. * A * t + B;
+    float offs = ( A * t + B ) * t + C;
+    return (x - knEnd) * slope + offs;
+  }
+  int i = 0;
+  for (i = 0; i < knotsCnt - 2; ++i)
+  {
+    if (x < ocio_grading_huecurve_knots[knotsOffs + i + 1])
+    {
+      break;
+    }
+  }
+  float A = ocio_grading_huecurve_coefs[coefsOffs + i];
+  float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets + i];
+  float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i];
+  float kn = ocio_grading_huecurve_knots[knotsOffs + i];
+  float t = x - kn;
+  return ( A * t + B ) * t + C;
+}
+
+float ocio_grading_huecurve_evalBSplineCurveRev(int curveIdx, float x)
+{
+  int knotsOffs = ocio_grading_huecurve_knotsOffsets[curveIdx * 2];
+  int knotsCnt = ocio_grading_huecurve_knotsOffsets[curveIdx * 2 + 1];
+  int coefsOffs = ocio_grading_huecurve_coefsOffsets[curveIdx * 2];
+  int coefsCnt = ocio_grading_huecurve_coefsOffsets[curveIdx * 2 + 1];
+  int coefsSets = coefsCnt / 3;
+  if (coefsSets == 0)
+  {
+    return x;
+  }
+  float knStart = ocio_grading_huecurve_knots[knotsOffs];
+  float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
+  float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+  float knEndY;
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    knEndY = ( A * t + B ) * t + C;
+  }
+  if (x <= knStartY)
+  {
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+    return abs(B) < 1e-5 ? knStart : (x - C) / B + knStart;
+  }
+  else if (x >= knEndY)
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    float slope = 2. * A * t + B;
+    float offs = ( A * t + B ) * t + C;
+    return abs(slope) < 1e-5 ? knEnd : (x - offs) / slope + knEnd;
+  }
+  int i = 0;
+  for (i = 0; i < knotsCnt - 2; ++i)
+  {
+    if (x < ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i + 1])
+    {
+      break;
+    }
+  }
+  float A = ocio_grading_huecurve_coefs[coefsOffs + i];
+  float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets + i];
+  float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i];
+  float kn = ocio_grading_huecurve_knots[knotsOffs + i];
+  float C0 = C - x;
+  float discrim = sqrt(B * B - 4. * A * C0);
+  float denom = discrim + B;
+  if (abs(denom) < 1e-5)
+  {
+    return abs(B) < 1e-5 ? kn : kn + (-C0 / B);
+  }
+  return kn + (-2. * C0) / denom;
+}
+
+float ocio_grading_huecurve_evalBSplineCurveRevHue(int curveIdx, float x)
+{
+  int knotsOffs = ocio_grading_huecurve_knotsOffsets[curveIdx * 2];
+  int knotsCnt = ocio_grading_huecurve_knotsOffsets[curveIdx * 2 + 1];
+  int coefsOffs = ocio_grading_huecurve_coefsOffsets[curveIdx * 2];
+  int coefsCnt = ocio_grading_huecurve_coefsOffsets[curveIdx * 2 + 1];
+  int coefsSets = coefsCnt / 3;
+  if (coefsSets == 0)
+  {
+    return x;
+  }
+  float knStart = ocio_grading_huecurve_knots[knotsOffs];
+  float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
+  float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+  // Match the upstream CPU HueFX lower periodic bound.
+  knStartY = (curveIdx == 7) ? knStartY + knStart : knStartY;
+  float knEndY;
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    knEndY = ( A * t + B ) * t + C;
+    knEndY = (curveIdx == 7) ? knEndY + knEnd : knEndY;
+  }
+  if (x < knStartY)
+  {
+    x = x + ceil(knStartY - x);
+  }
+  else if (x > knEndY)
+  {
+    x = x - ceil(x - knEndY);
+  }
+  int i = 0;
+  for (i = 0; i < knotsCnt - 2; ++i)
+  {
+    float curve_x = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i + 1];
+    curve_x = (curveIdx == 7) ? curve_x + ocio_grading_huecurve_knots[knotsOffs + i + 1] : curve_x;
+    if (x < curve_x)
+    {
+      break;
+    }
+  }
+  float A = ocio_grading_huecurve_coefs[coefsOffs + i];
+  float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets + i];
+  float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i];
+  float kn = ocio_grading_huecurve_knots[knotsOffs + i];
+  if (curveIdx == 7)
+  {
+    C = C + kn;
+    B = B + 1.;
+  }
+  float C0 = C - x;
+  float discrim = sqrt(B * B - 4. * A * C0);
+  float denom = discrim + B;
+  if (abs(denom) < 1e-5)
+  {
+    return abs(B) < 1e-5 ? kn : kn + (-C0 / B);
+  }
+  return kn + (-2. * C0) / denom;
+}
+
+// Declaration of the OCIO shader function
+
+float4 grading_transform(float4 inPixel)
+{
+  float4 outColor = inPixel;
+  
+  // Add GradingHueCurve inverse processing
+  
+  {
+    outColor.r = ocio_grading_huecurve_evalBSplineCurve(1, outColor.r, 1.);
+    outColor.g = ocio_grading_huecurve_evalBSplineCurve(1, outColor.g, 1.);
+    outColor.b = ocio_grading_huecurve_evalBSplineCurve(1, outColor.b, 1.);
+  }
+
+  return outColor;
+}
+
+// Close class wrapper
+
+
+};
+float4 grading_transform(
+  constant int ocio_grading_huecurve_knotsOffsets[16]
+  , int ocio_grading_huecurve_knotsOffsets_count
+  , constant float ocio_grading_huecurve_knots[120]
+  , int ocio_grading_huecurve_knots_count
+  , constant int ocio_grading_huecurve_coefsOffsets[16]
+  , int ocio_grading_huecurve_coefsOffsets_count
+  , constant float ocio_grading_huecurve_coefs[360]
+  , int ocio_grading_huecurve_coefs_count
+  , bool ocio_grading_huecurve_localBypass
+  , float4 inPixel)
+{
+  return ocio_grading_transform(
+    ocio_grading_huecurve_knotsOffsets
+    , ocio_grading_huecurve_knotsOffsets_count
+    , ocio_grading_huecurve_knots
+    , ocio_grading_huecurve_knots_count
+    , ocio_grading_huecurve_coefsOffsets
+    , ocio_grading_huecurve_coefsOffsets_count
+    , ocio_grading_huecurve_coefs
+    , ocio_grading_huecurve_coefs_count
+    , ocio_grading_huecurve_localBypass
+  ).grading_transform(inPixel);
+}
+"""#)
+    case "hue.video.inverse.nohsy":
+        return GradingShaderTemplate(names: ["ocio_grading_huecurve_knotsOffsets", "ocio_grading_huecurve_knots", "ocio_grading_huecurve_coefsOffsets", "ocio_grading_huecurve_coefs", "ocio_grading_huecurve_localBypass"], lengths: [16, 120, 16, 360, 0], source: #"""
+
+// Declaration of class wrapper
+
+struct ocio_grading_transform
+{
+ocio_grading_transform(
+  constant int ocio_grading_huecurve_knotsOffsets[16]
+  , int ocio_grading_huecurve_knotsOffsets_count
+  , constant float ocio_grading_huecurve_knots[120]
+  , int ocio_grading_huecurve_knots_count
+  , constant int ocio_grading_huecurve_coefsOffsets[16]
+  , int ocio_grading_huecurve_coefsOffsets_count
+  , constant float ocio_grading_huecurve_coefs[360]
+  , int ocio_grading_huecurve_coefs_count
+  , bool ocio_grading_huecurve_localBypass
+)
+{
+  for(int i = 0; i < ocio_grading_huecurve_knotsOffsets_count; ++i)
+  {
+    this->ocio_grading_huecurve_knotsOffsets[i] = ocio_grading_huecurve_knotsOffsets[i];
+  }
+  for(int i = ocio_grading_huecurve_knotsOffsets_count; i < 16; ++i)
+  {
+    this->ocio_grading_huecurve_knotsOffsets[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_knots_count; ++i)
+  {
+    this->ocio_grading_huecurve_knots[i] = ocio_grading_huecurve_knots[i];
+  }
+  for(int i = ocio_grading_huecurve_knots_count; i < 120; ++i)
+  {
+    this->ocio_grading_huecurve_knots[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_coefsOffsets_count; ++i)
+  {
+    this->ocio_grading_huecurve_coefsOffsets[i] = ocio_grading_huecurve_coefsOffsets[i];
+  }
+  for(int i = ocio_grading_huecurve_coefsOffsets_count; i < 16; ++i)
+  {
+    this->ocio_grading_huecurve_coefsOffsets[i] = 0;
+  }
+  for(int i = 0; i < ocio_grading_huecurve_coefs_count; ++i)
+  {
+    this->ocio_grading_huecurve_coefs[i] = ocio_grading_huecurve_coefs[i];
+  }
+  for(int i = ocio_grading_huecurve_coefs_count; i < 360; ++i)
+  {
+    this->ocio_grading_huecurve_coefs[i] = 0;
+  }
+  this->ocio_grading_huecurve_localBypass = ocio_grading_huecurve_localBypass;
+}
+
+
+// Declaration of all variables
+
+int ocio_grading_huecurve_knotsOffsets[16];
+float ocio_grading_huecurve_knots[120];
+int ocio_grading_huecurve_coefsOffsets[16];
+float ocio_grading_huecurve_coefs[360];
+bool ocio_grading_huecurve_localBypass;
+
+
+// Declaration of all helper methods
+
+
+float ocio_grading_huecurve_evalBSplineCurve(int curveIdx, float x, float identity_x)
+{
+  int knotsOffs = ocio_grading_huecurve_knotsOffsets[curveIdx * 2];
+  int knotsCnt = ocio_grading_huecurve_knotsOffsets[curveIdx * 2 + 1];
+  int coefsOffs = ocio_grading_huecurve_coefsOffsets[curveIdx * 2];
+  int coefsCnt = ocio_grading_huecurve_coefsOffsets[curveIdx * 2 + 1];
+  int coefsSets = coefsCnt / 3;
+  if (coefsSets == 0)
+  {
+    return identity_x;
+  }
+  float knStart = ocio_grading_huecurve_knots[knotsOffs];
+  float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
+  if (x <= knStart)
+  {
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+    return (x - knStart) * B + C;
+  }
+  else if (x >= knEnd)
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    float slope = 2. * A * t + B;
+    float offs = ( A * t + B ) * t + C;
+    return (x - knEnd) * slope + offs;
+  }
+  int i = 0;
+  for (i = 0; i < knotsCnt - 2; ++i)
+  {
+    if (x < ocio_grading_huecurve_knots[knotsOffs + i + 1])
+    {
+      break;
+    }
+  }
+  float A = ocio_grading_huecurve_coefs[coefsOffs + i];
+  float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets + i];
+  float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i];
+  float kn = ocio_grading_huecurve_knots[knotsOffs + i];
+  float t = x - kn;
+  return ( A * t + B ) * t + C;
+}
+
+float ocio_grading_huecurve_evalBSplineCurveRev(int curveIdx, float x)
+{
+  int knotsOffs = ocio_grading_huecurve_knotsOffsets[curveIdx * 2];
+  int knotsCnt = ocio_grading_huecurve_knotsOffsets[curveIdx * 2 + 1];
+  int coefsOffs = ocio_grading_huecurve_coefsOffsets[curveIdx * 2];
+  int coefsCnt = ocio_grading_huecurve_coefsOffsets[curveIdx * 2 + 1];
+  int coefsSets = coefsCnt / 3;
+  if (coefsSets == 0)
+  {
+    return x;
+  }
+  float knStart = ocio_grading_huecurve_knots[knotsOffs];
+  float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
+  float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+  float knEndY;
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    knEndY = ( A * t + B ) * t + C;
+  }
+  if (x <= knStartY)
+  {
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+    return abs(B) < 1e-5 ? knStart : (x - C) / B + knStart;
+  }
+  else if (x >= knEndY)
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    float slope = 2. * A * t + B;
+    float offs = ( A * t + B ) * t + C;
+    return abs(slope) < 1e-5 ? knEnd : (x - offs) / slope + knEnd;
+  }
+  int i = 0;
+  for (i = 0; i < knotsCnt - 2; ++i)
+  {
+    if (x < ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i + 1])
+    {
+      break;
+    }
+  }
+  float A = ocio_grading_huecurve_coefs[coefsOffs + i];
+  float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets + i];
+  float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i];
+  float kn = ocio_grading_huecurve_knots[knotsOffs + i];
+  float C0 = C - x;
+  float discrim = sqrt(B * B - 4. * A * C0);
+  float denom = discrim + B;
+  if (abs(denom) < 1e-5)
+  {
+    return abs(B) < 1e-5 ? kn : kn + (-C0 / B);
+  }
+  return kn + (-2. * C0) / denom;
+}
+
+float ocio_grading_huecurve_evalBSplineCurveRevHue(int curveIdx, float x)
+{
+  int knotsOffs = ocio_grading_huecurve_knotsOffsets[curveIdx * 2];
+  int knotsCnt = ocio_grading_huecurve_knotsOffsets[curveIdx * 2 + 1];
+  int coefsOffs = ocio_grading_huecurve_coefsOffsets[curveIdx * 2];
+  int coefsCnt = ocio_grading_huecurve_coefsOffsets[curveIdx * 2 + 1];
+  int coefsSets = coefsCnt / 3;
+  if (coefsSets == 0)
+  {
+    return x;
+  }
+  float knStart = ocio_grading_huecurve_knots[knotsOffs];
+  float knEnd = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 1];
+  float knStartY = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2];
+  // Match the upstream CPU HueFX lower periodic bound.
+  knStartY = (curveIdx == 7) ? knStartY + knStart : knStartY;
+  float knEndY;
+  {
+    float A = ocio_grading_huecurve_coefs[coefsOffs + coefsSets - 1];
+    float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 - 1];
+    float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 3 - 1];
+    float kn = ocio_grading_huecurve_knots[knotsOffs + knotsCnt - 2];
+    float t = knEnd - kn;
+    knEndY = ( A * t + B ) * t + C;
+    knEndY = (curveIdx == 7) ? knEndY + knEnd : knEndY;
+  }
+  if (x < knStartY)
+  {
+    x = x + ceil(knStartY - x);
+  }
+  else if (x > knEndY)
+  {
+    x = x - ceil(x - knEndY);
+  }
+  int i = 0;
+  for (i = 0; i < knotsCnt - 2; ++i)
+  {
+    float curve_x = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i + 1];
+    curve_x = (curveIdx == 7) ? curve_x + ocio_grading_huecurve_knots[knotsOffs + i + 1] : curve_x;
+    if (x < curve_x)
+    {
+      break;
+    }
+  }
+  float A = ocio_grading_huecurve_coefs[coefsOffs + i];
+  float B = ocio_grading_huecurve_coefs[coefsOffs + coefsSets + i];
+  float C = ocio_grading_huecurve_coefs[coefsOffs + coefsSets * 2 + i];
+  float kn = ocio_grading_huecurve_knots[knotsOffs + i];
+  if (curveIdx == 7)
+  {
+    C = C + kn;
+    B = B + 1.;
+  }
+  float C0 = C - x;
+  float discrim = sqrt(B * B - 4. * A * C0);
+  float denom = discrim + B;
+  if (abs(denom) < 1e-5)
+  {
+    return abs(B) < 1e-5 ? kn : kn + (-C0 / B);
+  }
+  return kn + (-2. * C0) / denom;
+}
+
+// Declaration of the OCIO shader function
+
+float4 grading_transform(float4 inPixel)
+{
+  float4 outColor = inPixel;
+  
+  // Add GradingHueCurve inverse processing
+  
+  {
+    if (!ocio_grading_huecurve_localBypass)
+    {
+      outColor.r = ocio_grading_huecurve_evalBSplineCurveRevHue(7, outColor.r);
+      outColor.r = ocio_grading_huecurve_evalBSplineCurveRevHue(0, outColor.r);
+      
+      outColor.r = outColor.r - floor( outColor.r );
+      float hueSatGain = max(0., ocio_grading_huecurve_evalBSplineCurve(1, outColor.r, 1.));
+      float hueLumGain = max(0., ocio_grading_huecurve_evalBSplineCurve(2, outColor.r, 1.));
+      outColor.g = max(0., outColor.g);
+      float satLumGain = max(0., ocio_grading_huecurve_evalBSplineCurve(6, outColor.g, 1.));
+      
+      hueLumGain = 1. - (1. - hueLumGain) * min( 1., outColor.g );
+      // Match the upstream CPU video luminance operation.
+      outColor.b = outColor.b - (hueLumGain + satLumGain - 2.) * 0.1;
+      
+      outColor.b = ocio_grading_huecurve_evalBSplineCurveRev(5, outColor.b);
+      
+      float lumSatGain = max(0., ocio_grading_huecurve_evalBSplineCurve(3, outColor.b, 1.));
+      float satGain = max(0.01, lumSatGain * hueSatGain);
+      outColor.g = outColor.g / satGain;
+      outColor.g = max(0., ocio_grading_huecurve_evalBSplineCurveRev(4, outColor.g));
+    }
   }
 
   return outColor;

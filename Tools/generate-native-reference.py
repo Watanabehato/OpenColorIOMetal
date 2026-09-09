@@ -43,7 +43,10 @@ TRANSFORMS = {
 def main():
     FIXTURES.mkdir(parents=True, exist_ok=True)
     cases = []
-    for name, transform in TRANSFORMS.items():
+    transforms = dict(TRANSFORMS)
+    for path in sorted((FIXTURES / "NativeFiles").iterdir()):
+        transforms["file-" + path.name] = f'!<FileTransform> {{src: "NativeFiles/{path.name}"}}'
+    for name, transform in transforms.items():
         yaml = (
             "ocio_profile_version: 2.5\n"
             "environment: {}\n"
@@ -55,12 +58,15 @@ def main():
             f"    to_scene_reference: {transform}\n"
         )
         config = ocio.Config.CreateFromStream(yaml)
+        config.setWorkingDir(str(FIXTURES))
         for direction, source, destination in [("forward", "Encoded", "Linear"), ("inverse", "Linear", "Encoded")]:
             processor = config.getProcessor(source, destination).getDefaultCPUProcessor()
             inputs = PIXELS
             # Exponentiation overflow does not inform finite numerical accuracy.
             if (name.startswith("log") or name == "allocation-lg2") and direction == "inverse":
                 inputs = [[-0.1, 0.0, 0.01, 0.25], [0.1, 0.3, 0.6, 0.5], [0.4, 0.5, 0.8, 1.0]]
+            if name.startswith("file-"):
+                inputs = [[0.0, 0.001, 0.01, 0.25], [0.1, 0.3, 0.6, 0.5], [0.4, 0.5, 0.8, 1.0]]
             expected = [processor.applyRGBA(pixel) for pixel in inputs]
             cases.append({"name": name + "-" + direction, "yaml": yaml, "source": source, "destination": destination, "input": inputs, "expected": expected})
     output = {"schemaVersion": 1, "oracleVersion": ocio.__version__, "cases": cases}

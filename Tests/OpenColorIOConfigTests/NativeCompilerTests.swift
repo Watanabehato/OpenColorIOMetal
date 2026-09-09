@@ -23,13 +23,14 @@ final class NativeCompilerTests: XCTestCase {
         let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/native-reference.json")
         return try JSONDecoder().decode(ReferenceFile.self, from: Data(contentsOf: url))
     }
+    private var fixturesDirectory: URL { URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures", isDirectory: true) }
 
     func testEveryOracleCaseCompilesToNativeMetal() throws {
         let reference = try references()
         XCTAssertEqual(reference.schemaVersion, 1)
         XCTAssertGreaterThanOrEqual(reference.cases.count, 46)
         for entry in reference.cases {
-            let config = try OCIOConfigDocument(yaml: entry.yaml, environment: [:])
+            let config = try OCIOConfigDocument(yaml: entry.yaml, workingDirectory: fixturesDirectory, environment: [:])
             let shader = try config.metalShader(from: entry.source, to: entry.destination)
             XCTAssertTrue(shader.source.contains("kernel void ocio_kernel"), entry.name)
             XCTAssertTrue(shader.source.contains("output[index] = pixel"), entry.name)
@@ -99,10 +100,10 @@ final class NativeCompilerTests: XCTestCase {
     #if canImport(Metal)
     func testMetalMatchesOCIOOracleForCustomOperations() throws {
         guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("Metal hardware unavailable; numerical native-shader verification did not run") }
-        let engine = try MetalColorEngine(catalogue: OCIOCatalogue.bundled(), device: device)
+        let engine = try MetalColorEngine(device: device)
         let reference = try references()
         for entry in reference.cases {
-            let config = try OCIOConfigDocument(yaml: entry.yaml, environment: [:])
+            let config = try OCIOConfigDocument(yaml: entry.yaml, workingDirectory: fixturesDirectory, environment: [:])
             let processor = try engine.nativeProcessor(configuration: config, source: entry.source, destination: entry.destination)
             let actual = try processor.processRGBA(entry.input.flatMap { $0 })
             let expected = entry.expected.flatMap { $0 }

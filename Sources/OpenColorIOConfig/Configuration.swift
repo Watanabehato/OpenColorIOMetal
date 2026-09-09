@@ -97,7 +97,7 @@ public struct OCIOConfigNamedTransform: Sendable, Equatable {
         let fields = try requireTaggedMapping(yaml, tag: "NamedTransform")
         name = try requireString(fields, "name", owner: "NamedTransform")
         aliases = try stringList(fields["aliases"], field: "aliases")
-        forward = try optionalTransform(fields["forward_transform"])
+        forward = try optionalTransform(fields["transform"] ?? fields["forward_transform"])
         inverse = try optionalTransform(fields["inverse_transform"])
         metadata = fields
         guard forward != nil || inverse != nil else { throw OCIOConfigError.invalid("NamedTransform '\(name)' has no transform") }

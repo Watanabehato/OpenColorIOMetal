@@ -110,6 +110,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--skip-templates", action="store_true", help="Only regenerate CPU/LUT fixtures")
     args = parser.parse_args()
+    supported = {"FIXED_FUNCTION_" + style for _, style, _ in definitions()}
+    upstream_unimplemented = {"FIXED_FUNCTION_ACES_GAMUTMAP_02", "FIXED_FUNCTION_ACES_GAMUTMAP_07"}
+    declared = {name for name in dir(ocio) if name.startswith("FIXED_FUNCTION_")}
+    if declared != supported | upstream_unimplemented:
+        raise RuntimeError(f"Fixed-function registry changed; port added/missing styles before release: {declared ^ (supported | upstream_unimplemented)}")
     if not args.skip_templates:
         regenerate_parameterless(ROOT / "Sources/OpenColorIOConfig/FixedFunctions.swift")
     cases = []
@@ -138,7 +143,7 @@ def main():
                           "relativeTolerance": 0.0005})
     target = ROOT / "Tests/OpenColorIOConfigTests/Fixtures/fixed-reference.json"
     target.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"schemaVersion": 1, "oracleVersion": ocio.__version__, "supportedStyleCount": 21,
+    payload = {"schemaVersion": 1, "oracleVersion": ocio.__version__, "supportedStyleCount": len(supported),
                "cases": cases}
     target.write_text(json.dumps(payload, indent=2, allow_nan=False) + "\n", encoding="utf-8")
     print(f"Generated {len(cases)} fixed-function CPU/LUT cases from OCIO {ocio.__version__}: {target}")

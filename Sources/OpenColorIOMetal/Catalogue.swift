@@ -208,7 +208,8 @@ public struct OCIOCatalogue: Sendable {
     /// Frameworks may place Catalogue under Resources or next to the executable for static linking.
     public static func bundled() throws -> OCIOCatalogue {
         #if SWIFT_PACKAGE
-        if let root = Bundle.module.url(forResource: "Catalogue", withExtension: nil) {
+        if let root = Bundle.module.url(forResource: "Catalogue", withExtension: nil),
+           FileManager.default.fileExists(atPath: root.appendingPathComponent("manifest.json").path) {
             return try OCIOCatalogue(contentsOf: root)
         }
         #endif

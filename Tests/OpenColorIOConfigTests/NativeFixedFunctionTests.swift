@@ -56,14 +56,21 @@ final class NativeFixedFunctionTests: XCTestCase {
                 let expected = try XCTUnwrap(entry.textures.first(where: {
                     $0.channels == channels && $0.width == texture.width && $0.height == texture.height
                 }), "missing oracle table for \(entry.name)")
+                var maximumRatio: Float = 0
+                var worstIndex = 0
                 for texel in 0..<(texture.width * texture.height * texture.depth) {
                     for channel in 0..<channels {
                         let actual = texture.values[texel * texture.channels + channel]
                         let wanted = expected.values[texel * channels + channel]
-                        XCTAssertEqual(actual, wanted, accuracy: 0.001 + abs(wanted) * 0.0001,
-                            "\(entry.name) LUT texel \(texel), channel \(channel), OCIO \(reference.oracleVersion)")
+                        let ratio = abs(actual - wanted) / (0.001 + abs(wanted) * 0.0001)
+                        if !ratio.isFinite || ratio > maximumRatio {
+                            maximumRatio = ratio
+                            worstIndex = texel * channels + channel
+                        }
                     }
                 }
+                XCTAssertLessThanOrEqual(maximumRatio, 1,
+                    "\(entry.name) LUT scalar \(worstIndex), OCIO \(reference.oracleVersion), error/tolerance \(maximumRatio)")
             }
             #if os(macOS)
             let source = directory.appendingPathComponent(entry.name + ".metal")
@@ -108,7 +115,7 @@ final class NativeFixedFunctionTests: XCTestCase {
         guard let device = MTLCreateSystemDefaultDevice() else {
             throw XCTSkip("Metal hardware is unavailable; fixed-function numerical parity remains unverified")
         }
-        let engine = try MetalColorEngine(catalogue: .bundled(), device: device)
+        let engine = try MetalColorEngine(device: device)
         let reference = try references()
         for entry in reference.cases {
             let configuration = try OCIOConfigDocument(yaml: entry.yaml, environment: [:])

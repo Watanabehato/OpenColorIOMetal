@@ -8,6 +8,7 @@ public struct OCIONativeLUT: Sendable {
     public let values: [Float]
     public let domainMinimum: [Double]
     public let domainMaximum: [Double]
+    public let halfDomain: Bool
 }
 
 public enum OCIONativeFileOperation: Sendable {
@@ -48,10 +49,11 @@ public enum OCIOLUTFile {
         guard let text, let value = Int(text), value >= 2 && value <= maximum else { throw OCIOConfigError.invalid("LUT size must be 2...\(maximum)") }
         return value
     }
-    static func lut(dimension: Int, size: Int, values: [Float], minimum: [Double] = [0, 0, 0], maximum: [Double] = [1, 1, 1]) throws -> OCIONativeLUT {
+    static func lut(dimension: Int, size: Int, values: [Float], minimum: [Double] = [0, 0, 0], maximum: [Double] = [1, 1, 1], halfDomain: Bool = false) throws -> OCIONativeLUT {
         let count = dimension == 1 ? size : size * size * size
         guard values.count == count * 3, zip(minimum, maximum).allSatisfy({ $1 > $0 }) else { throw OCIOConfigError.invalid("LUT value count or input domain is invalid") }
-        return OCIONativeLUT(dimension: dimension, size: size, values: values, domainMinimum: minimum, domainMaximum: maximum)
+        guard !halfDomain || (dimension == 1 && size == 65536) else { throw OCIOConfigError.invalid("half-domain LUT requires65536 1D entries") }
+        return OCIONativeLUT(dimension: dimension, size: size, values: values, domainMinimum: minimum, domainMaximum: maximum, halfDomain: halfDomain)
     }
     public static func cube(_ source: String) throws -> [OCIONativeFileOperation] {
         var size1D: Int?, size3D: Int?
@@ -163,41 +165,80 @@ extension OCIONativeCompiler {
     mutating func appendLUT(_ lut: OCIONativeLUT, interpolation: String, inverse: Bool) throws {
         let interpolation = interpolation.lowercased()
         guard ["default", "best", "linear", "nearest", "tetrahedral"].contains(interpolation) else { throw OCIOConfigError.invalid("unknown LUT interpolation '\(interpolation)'") }
-        if inverse && lut.dimension == 3 { throw OCIOConfigError.unavailableTransform("native inverse 3D LUT solving is not yet implemented") }
+        if inverse && lut.dimension == 3 { try appendInverseLUT3D(lut); return }
         let id = textures.count
         // Metal 1D textures are limited to 16384 texels on supported Macs. Packing
         // into rows supports OCIO's larger 1D/half-domain tables without resampling.
         let width = lut.dimension == 1 ? min(lut.size, 4096) : lut.size
         let height = lut.dimension == 1 ? (lut.size + width - 1) / width : lut.size
         var textureValues = lut.values
+        var inverseDomains: [(start: Int, end: Int, sign: Float)] = []
+        var negativeDomains: [(start: Int, end: Int)] = []
+        if inverse && lut.dimension == 1 {
+            for channel in 0..<3 {
+                let increasing = textureValues[channel] < textureValues[(lut.halfDomain ? 15360 : lut.size - 1) * 3 + channel]
+                var previous = textureValues[channel]
+                let positiveEnd = lut.halfDomain ? 31744 : lut.size - 1
+                for index in 1...positiveEnd {
+                    let offset = index * 3 + channel
+                    if increasing != (textureValues[offset] > previous) { textureValues[offset] = previous }
+                    else { previous = textureValues[offset] }
+                }
+                if lut.halfDomain {
+                    previous = textureValues[channel]
+                    for index in 32768...64512 {
+                        let offset = index * 3 + channel
+                        if !increasing != (textureValues[offset] > previous) { textureValues[offset] = previous }
+                        else { previous = textureValues[offset] }
+                    }
+                    var negativeEnd = 64511
+                    while negativeEnd > 32768 && textureValues[(negativeEnd - 1) * 3 + channel] == textureValues[64511 * 3 + channel] { negativeEnd -= 1 }
+                    var negativeStart = 32768
+                    while negativeStart < negativeEnd && textureValues[(negativeStart + 1) * 3 + channel] == textureValues[32768 * 3 + channel] { negativeStart += 1 }
+                    negativeDomains.append((negativeStart, negativeEnd))
+                }
+                var end = lut.halfDomain ? 31743 : lut.size - 1
+                let endValue = textureValues[end * 3 + channel]
+                while end > 0 && textureValues[(end - 1) * 3 + channel] == endValue { end -= 1 }
+                var start = 0
+                while start < end && textureValues[(start + 1) * 3 + channel] == textureValues[channel] { start += 1 }
+                let sign: Float = increasing ? 1 : -1
+                inverseDomains.append((start, end, sign))
+                for index in 0..<lut.size { textureValues[index * 3 + channel] *= lut.halfDomain && index >= 32768 ? -sign : sign }
+            }
+        }
         if lut.dimension == 1 { textureValues += Array(repeating: 0, count: width * height * 3 - textureValues.count) }
         textures.append(OCIONativeTexture(index: id, dimension: lut.dimension == 1 ? 2 : 3, width: width, height: height, depth: lut.dimension == 3 ? lut.size : 1, channels: 3, values: textureValues))
         let texture = "lut\(id)", size = Double(lut.size), last = Double(lut.size - 1)
         func read(_ index: String) -> String { "\(texture).read(uint2((\(index)) % \(width)u, (\(index)) / \(width)u))" }
         let ranges = zip(lut.domainMinimum, lut.domainMaximum).map { $1 - $0 }
         var code = "{\n"
+        if lut.halfDomain && !helperFunctions.contains(Self.halfLUTHelpers) { helperFunctions.append(Self.halfLUTHelpers) }
         if !inverse { code += "float3 normalized = (pixel.rgb - \(mslVector(lut.domainMinimum))) / \(mslVector(ranges));\n" }
         if lut.dimension == 1 {
             for (channel, component) in ["r", "g", "b"].enumerated() {
                 if inverse {
-                    let channelValues = stride(from: channel, to: lut.values.count, by: 3).map { lut.values[$0] }
-                    let increasing = channelValues.last! > channelValues.first!
-                    guard zip(channelValues, channelValues.dropFirst()).allSatisfy({ increasing ? $1 >= $0 : $1 <= $0 }), channelValues.first != channelValues.last else { throw OCIOConfigError.unavailableTransform("inverse 1D LUT requires a monotonic, nonconstant channel") }
+                    let domain = inverseDomains[channel]
+                    code += "{\n"
+                    if lut.halfDomain {
+                        let negative = negativeDomains[channel]
+                        code += "bool negative = (pixel.\(component) >= \(mslNumber(Double(lut.values[channel])))) != \(domain.sign > 0 ? "true" : "false");\n"
+                        code += "uint low = negative ? \(negative.start)u : \(domain.start)u, high = negative ? \(negative.end)u : \(domain.end)u;\n"
+                        code += "float flip = negative ? \(mslNumber(-Double(domain.sign))) : \(mslNumber(Double(domain.sign)));\n"
+                    } else { code += "uint low = \(domain.start)u, high = \(domain.end)u; float flip = \(mslNumber(Double(domain.sign)));\n" }
                     code += """
-                    {
-                        float target = pixel.\(component);
-                        uint low = 0u, high = \(lut.size - 1)u;
+                        float target = clamp(pixel.\(component) * flip, \(read("low")).\(component), \(read("high")).\(component));
                         while (high - low > 1u) {
                             uint mid = (low + high) / 2u;
-                            if (\(read("mid")).\(component) \(increasing ? "<" : ">") target) low = mid; else high = mid;
+                            if (\(read("mid")).\(component) < target) low = mid; else high = mid;
                         }
                         float a = \(read("low")).\(component), b = \(read("high")).\(component);
                         float fraction = a == b ? 0.0f : clamp((target - a) / (b - a), 0.0f, 1.0f);
-                        pixel.\(component) = ((float(low) + fraction) / \(mslNumber(last))) * \(mslNumber(ranges[channel])) + \(mslNumber(lut.domainMinimum[channel]));
-                    }
                     """
+                    if lut.halfDomain { code += "pixel.\(component) = mix(ocio_half_value(low), ocio_half_value(high), fraction);\n}" }
+                    else { code += "pixel.\(component) = ((float(low) + fraction) / \(mslNumber(last))) * \(mslNumber(ranges[channel])) + \(mslNumber(lut.domainMinimum[channel]));\n}" }
                 } else {
-                    code += "{ float position = clamp(normalized.\(component), 0.0f, 1.0f) * \(mslNumber(last));\n"
+                    code += lut.halfDomain ? "{ float position = ocio_half_position(pixel.\(component));\n" : "{ float position = clamp(normalized.\(component), 0.0f, 1.0f) * \(mslNumber(last));\n"
                     if interpolation == "nearest" {
                         code += "uint nearest = uint(floor(position + 0.5f)); pixel.\(component) = \(read("nearest")).\(component); }\n"
                     } else {
@@ -252,4 +293,24 @@ extension OCIONativeCompiler {
         }
         body.append(code + "\n}")
     }
+
+    private static let halfLUTHelpers = """
+    inline float ocio_half_position(float f) {
+        float absolute = abs(f);
+        float position;
+        if(absolute > 0.00006103515625f) {
+            absolute = min(absolute, 65504.0f);
+            float exponent = floor(log2(absolute));
+            float lower = exp2(exponent);
+            position = (exponent + (absolute - lower) / lower + 15.0f) * 1024.0f;
+        } else { position = absolute * 16777216.0f; }
+        return position + (f < 0.0f ? 32768.0f : 0.0f);
+    }
+    inline float ocio_half_value(uint bits) {
+        uint exponent = (bits >> 10u) & 31u;
+        float mantissa = float(bits & 1023u);
+        float value = exponent == 0u ? mantissa * 0.000000059604644775390625f : (1.0f + mantissa / 1024.0f) * exp2(float(exponent) - 15.0f);
+        return (bits & 32768u) != 0u ? -value : value;
+    }
+    """
 }
