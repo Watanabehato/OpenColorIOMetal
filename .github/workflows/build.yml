@@ -1,0 +1,115 @@
+name: Swift 6 Metal build
+
+on:
+  push:
+    branches: ['codex/**', main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: swift-metal-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  oracle:
+    name: Exact upstream catalogue and CPU reference
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v4
+        id: oracle-cache
+        with:
+          path: |
+            build/oracle
+            build/oracle-install
+            build/upstream
+          key: ocio-oracle-ubuntu24-python312-${{ hashFiles('UPSTREAM.json', 'Scripts/build-oracle.sh') }}
+      - name: Build development-only upstream reference
+        if: steps.oracle-cache.outputs.cache-hit != 'true'
+        run: bash Scripts/build-oracle.sh
+      - name: Generate every configured conversion and its independent CPU reference
+        env:
+          PYTHONPATH: ${{ github.workspace }}/build/oracle/src/bindings/python
+        run: |
+          python3 Tools/export_catalogue.py \
+            --output Sources/OpenColorIOMetal/Resources/Catalogue \
+            --upstream-sha "$(python3 -c 'import json; print(json.load(open("UPSTREAM.json"))["commit"])')" \
+            --upstream-source build/upstream --oracle-build-root build/oracle
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-metal-catalogue
+          path: Sources/OpenColorIOMetal/Resources/Catalogue
+          if-no-files-found: error
+          retention-days: 14
+
+  swift:
+    name: Swift 6 parser and API compilation
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile Swift 6 and run native configuration tests
+        run: |
+          swift --version
+          swift test --filter 'YAMLTests|ConfigurationTests|Native' 2>&1 | tee swift-tests.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: swift-compilation-log
+          path: swift-tests.log
+
+  macos:
+    name: Universal static framework and debug CLI
+    needs: [oracle, swift]
+    runs-on: macos-15
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-metal-catalogue
+          path: Sources/OpenColorIOMetal/Resources/Catalogue
+      - name: Build Swift 6 package and run full metadata/configuration tests
+        run: swift test
+      - name: Compile every unique Metal shader
+        run: python3 Scripts/check-metal.py Sources/OpenColorIOMetal/Resources/Catalogue
+      - name: Build default static universal macOS framework
+        run: bash Scripts/build-framework.sh
+      - name: Build universal Debug CLI and verify framework consumer
+        run: bash Scripts/build-cli.sh
+      - name: Validate archive coverage
+        run: dist/Debug/ocio-metal validate --archive dist/Debug/Catalogue
+      - name: Execute CPU/Metal numerical comparison when Metal is available
+        run: |
+          set +e
+          dist/Debug/ocio-metal validate --gpu --archive dist/Debug/Catalogue --output dist/gpu-validation.json
+          result=$?
+          set -e
+          if [ "$result" -ne 0 ]; then
+            echo "GPU comparison not proven; inspect gpu-validation.json and job output." >> "$GITHUB_STEP_SUMMARY"
+            if [ "$result" -ne 3 ]; then exit "$result"; fi
+          fi
+      - name: Package framework and Debug CLI preserving symlinks
+        run: |
+          cp LICENSE UPSTREAM.json README.md dist/
+          tar -czf OpenColorIOMetal-macOS-universal.tar.gz -C dist .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenColorIOMetal-macOS-universal
+          path: OpenColorIOMetal-macOS-universal.tar.gz
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verification-reports
+          path: |
+            dist/*validation.json
+            dist/metal-compilation.json
+            Sources/OpenColorIOMetal/Resources/Catalogue/coverage.json

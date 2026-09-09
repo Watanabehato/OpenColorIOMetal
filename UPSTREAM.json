@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/AcademySoftwareFoundation/OpenColorIO",
+  "commit": "5a808fb57a94c7229640a97835c420c9a1fbd1fe",
+  "version": "2.6.0-dev",
+  "license": "BSD-3-Clause",
+  "retrievedDate": "2026-09-09",
+  "runtimeLanguage": "Swift 6 and Metal Shading Language"
+}
