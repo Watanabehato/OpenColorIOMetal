@@ -97,6 +97,17 @@ struct OCIONativeCompiler {
                 direction: step.direction, looksBypass: p.bool("looks_bypass", defaultValue: false), dataBypass: p.bool("data_bypass", defaultValue: true))
             for nested in steps { try append(nested, depth: depth + 1) }
         case "FileTransform": try appendFile(p, inverse: inverse, depth: depth + 1)
+        case "Lut1DTransform", "Lut3DTransform":
+            let lut: OCIONativeLUT
+            if let supplied = transform.lut { lut = supplied }
+            else {
+                let size = try p.number("length", defaultValue: p.number("grid_size", defaultValue: 2))
+                guard size >= 2, size <= 1_048_576, size.rounded(.towardZero) == size,
+                      let values = try p.optionalVector("values", count: nil) else { throw p.error("LUT requires an integer length/grid_size and RGB values") }
+                lut = try OCIOLUTFile.lut(dimension: transform.type == "Lut1DTransform" ? 1 : 3, size: Int(size), values: values.map(Float.init),
+                    halfDomain: p.bool("half_domain", defaultValue: false), hueAdjust: p.bool("hue_adjust", defaultValue: false))
+            }
+            try appendLUT(lut, interpolation: p.string("interpolation", defaultValue: "default"), inverse: inverse)
         case "MatrixTransform": body.append(try matrix(p, inverse: inverse))
         case "RangeTransform": body.append(try range(p, inverse: inverse))
         case "ExponentTransform": body.append(try exponent(p, inverse: inverse))

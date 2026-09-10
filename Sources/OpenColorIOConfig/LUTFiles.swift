@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 import Foundation
 
-public struct OCIONativeLUT: Sendable {
+public struct OCIONativeLUT: Sendable, Equatable {
     public let dimension: Int
     public let size: Int
     /// RGB triples; red is the fastest varying axis for 3D Metal upload.
@@ -50,7 +50,8 @@ public enum OCIOLUTFile {
         guard let text, let value = Int(text), value >= 2 && value <= maximum else { throw OCIOConfigError.invalid("LUT size must be 2...\(maximum)") }
         return value
     }
-    static func lut(dimension: Int, size: Int, values: [Float], minimum: [Double] = [0, 0, 0], maximum: [Double] = [1, 1, 1], halfDomain: Bool = false, hueAdjust: Bool = false) throws -> OCIONativeLUT {
+    public static func lut(dimension: Int, size: Int, values: [Float], minimum: [Double] = [0, 0, 0], maximum: [Double] = [1, 1, 1], halfDomain: Bool = false, hueAdjust: Bool = false) throws -> OCIONativeLUT {
+        guard [1, 3].contains(dimension), size >= 2, size <= (dimension == 1 ? 1_048_576 : 129), minimum.count == 3, maximum.count == 3 else { throw OCIOConfigError.invalid("LUT dimension, size or domain shape is invalid") }
         let count = dimension == 1 ? size : size * size * size
         guard values.count == count * 3, zip(minimum, maximum).allSatisfy({ $1 > $0 }) else { throw OCIOConfigError.invalid("LUT value count or input domain is invalid") }
         guard !halfDomain || (dimension == 1 && size == 65536) else { throw OCIOConfigError.invalid("half-domain LUT requires 65536 1D entries") }
@@ -211,7 +212,7 @@ extension OCIONativeCompiler {
         }
         if lut.dimension == 1 { textureValues += Array(repeating: 0, count: width * height * 3 - textureValues.count) }
         textures.append(OCIONativeTexture(index: id, dimension: lut.dimension == 1 ? 2 : 3, width: width, height: height, depth: lut.dimension == 3 ? lut.size : 1, channels: 3, values: textureValues))
-        let texture = "lut\(id)", size = Double(lut.size), last = Double(lut.size - 1)
+        let texture = "lut\(id)", last = Double(lut.size - 1)
         func read(_ index: String) -> String { "\(texture).read(uint2((\(index)) % \(width)u, (\(index)) / \(width)u))" }
         let ranges = zip(lut.domainMinimum, lut.domainMaximum).map { $1 - $0 }
         var code = "{\n"
@@ -305,9 +306,22 @@ extension OCIONativeCompiler {
             }
             pixel.rgb = c000 + x * (a - c000) + y * (b - a) + z * (c111 - b);
             """
+        } else if interpolation == "nearest" {
+            code += "uint3 nearest = uint3(floor(clamp(normalized, 0.0f, 1.0f) * \(mslNumber(last)) + 0.5f));\npixel.rgb = \(texture).read(nearest).rgb;\n"
         } else {
-            let filtering = interpolation == "nearest" ? "nearest" : "linear"
-            code += "constexpr sampler sampling(coord::normalized, address::clamp_to_edge, filter::\(filtering));\npixel.rgb = \(texture).sample(sampling, (normalized * \(mslNumber(last)) + 0.5f) / \(mslNumber(size))).rgb;\n"
+            // Hardware texture interpolation may quantize weights to 1/256.
+            // Explicit Float32 weights preserve small code values in coarse LUTs.
+            code += """
+            float3 position = clamp(normalized, 0.0f, 1.0f) * \(mslNumber(last));
+            uint3 lower = uint3(floor(position));
+            uint3 upper = min(lower + 1u, uint3(\(lut.size - 1)u));
+            float3 weight = position - float3(lower);
+            float3 rg00 = mix(\(texture).read(lower).rgb, \(texture).read(uint3(upper.r, lower.g, lower.b)).rgb, weight.r);
+            float3 rg10 = mix(\(texture).read(uint3(lower.r, upper.g, lower.b)).rgb, \(texture).read(uint3(upper.r, upper.g, lower.b)).rgb, weight.r);
+            float3 rg01 = mix(\(texture).read(uint3(lower.r, lower.g, upper.b)).rgb, \(texture).read(uint3(upper.r, lower.g, upper.b)).rgb, weight.r);
+            float3 rg11 = mix(\(texture).read(uint3(lower.r, upper.g, upper.b)).rgb, \(texture).read(upper).rgb, weight.r);
+            pixel.rgb = mix(mix(rg00, rg10, weight.g), mix(rg01, rg11, weight.g), weight.b);
+            """
         }
         if lut.hueAdjust { code += "\npixel[hueMid] = hueFactor * (pixel[hueMax] - pixel[hueMin]) + pixel[hueMin];\n" }
         body.append(code + "\n}")

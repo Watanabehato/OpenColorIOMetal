@@ -55,12 +55,61 @@ public struct ReferenceValidator: Sendable {
         }
         input = manifest.input
         cases = manifest.cases
+        var names = Set<String>()
         for reference in cases {
+            guard names.insert(reference.name).inserted else {
+                throw OCIOError.invalidArchive("duplicate reference case: \(reference.name)")
+            }
             guard reference.absoluteTolerance.isFinite, reference.relativeTolerance.isFinite,
                   reference.absoluteTolerance >= 0, reference.relativeTolerance >= 0 else {
                 throw OCIOError.invalidArchive("invalid tolerances in \(reference.name)")
             }
             for id in reference.pipeline { _ = try catalogue.transform(id) }
+        }
+        // The default suite must cover every declared operation. An explicitly supplied
+        // suite may intentionally select a smaller, user-defined regression set.
+        if validationURL == nil { try validateCoverage() }
+    }
+
+    private func validateCoverage() throws {
+        var required: [String: [String]] = [:]
+        func add(_ name: String, _ pipeline: [String]) throws {
+            guard required.updateValue(pipeline, forKey: name) == nil else {
+                throw OCIOError.invalidArchive("duplicate archive operation: \(name)")
+            }
+        }
+        for configuration in catalogue.configurations {
+            let id = configuration.id
+            let pairCount = configuration.colorSpaces.count.multipliedReportingOverflow(by: configuration.colorSpaces.count)
+            guard !pairCount.overflow, configuration.conversions.count == pairCount.partialValue else {
+                throw OCIOError.invalidArchive("reference archive lacks all directed pairs in \(id)")
+            }
+            for pair in configuration.conversions {
+                try add("pair|\(id)|\(pair.source)|\(pair.destination)", pair.pipeline)
+            }
+            for view in configuration.displayViews {
+                try add("display|\(id)|\(view.source)|\(view.display)|\(view.view)|\(view.direction.rawValue)", view.pipeline)
+            }
+            for named in configuration.namedTransforms {
+                try add("named|\(id)|\(named.name)|forward", named.forward)
+                try add("named|\(id)|\(named.name)|inverse", named.inverse)
+            }
+            for look in configuration.looks {
+                try add("look|\(id)|\(look.name)|forward", look.forward)
+                try add("look|\(id)|\(look.name)|inverse", look.inverse)
+            }
+        }
+        for builtin in catalogue.builtins {
+            try add("builtin|\(builtin.name)|forward", builtin.forward)
+            try add("builtin|\(builtin.name)|inverse", builtin.inverse)
+        }
+        guard cases.count == required.count else {
+            throw OCIOError.invalidArchive("default reference suite contains \(cases.count) cases for \(required.count) declared operations")
+        }
+        for reference in cases {
+            guard let pipeline = required[reference.name], reference.pipeline == pipeline else {
+                throw OCIOError.invalidArchive("reference name or pipeline differs from archive: \(reference.name)")
+            }
         }
     }
 

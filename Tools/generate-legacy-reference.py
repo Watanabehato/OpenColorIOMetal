@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 import PyOpenColorIO as ocio
+from oracle_helpers import CPU_REFERENCE_METADATA, cpu_reference
 
 root = Path(__file__).resolve().parents[1]
 fixtures = root / "Tests/OpenColorIOConfigTests/Fixtures/Legacy"
@@ -12,9 +13,9 @@ for path in sorted(fixtures.iterdir()):
     for direction in ("forward", "inverse"):
         transform = ocio.FileTransform(src=str(path), interpolation=ocio.INTERP_LINEAR,
             direction=ocio.TRANSFORM_DIR_FORWARD if direction == "forward" else ocio.TRANSFORM_DIR_INVERSE)
-        processor = ocio.Config.CreateRaw().getProcessor(transform).getDefaultCPUProcessor()
+        processor = cpu_reference(ocio.Config.CreateRaw().getProcessor(transform))
         expected = [str(float(value)) for pixel in inputs for value in processor.applyRGBA(pixel)]
         cases.append({"file": path.name, "direction": direction, "input": [v for p in inputs for v in p], "expected": expected})
 target = fixtures.parent / "legacy-reference.json"
-target.write_text(json.dumps({"oracleVersion": ocio.__version__, "cases": cases}, indent=2) + "\n")
+target.write_text(json.dumps({"oracleVersion": ocio.__version__, "cpuReference": CPU_REFERENCE_METADATA, "cases": cases}, indent=2) + "\n")
 print(f"Generated {len(cases)} direct legacy file references from OCIO {ocio.__version__}")

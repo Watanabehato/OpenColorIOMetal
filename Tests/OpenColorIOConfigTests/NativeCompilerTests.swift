@@ -30,10 +30,12 @@ final class NativeCompilerTests: XCTestCase {
         XCTAssertEqual(reference.schemaVersion, 1)
         XCTAssertGreaterThanOrEqual(reference.cases.count, 46)
         for entry in reference.cases {
-            let config = try OCIOConfigDocument(yaml: entry.yaml, workingDirectory: fixturesDirectory, environment: [:])
-            let shader = try config.metalShader(from: entry.source, to: entry.destination)
-            XCTAssertTrue(shader.source.contains("kernel void ocio_kernel"), entry.name)
-            XCTAssertTrue(shader.source.contains("output[index] = pixel"), entry.name)
+            do {
+                let config = try OCIOConfigDocument(yaml: entry.yaml, workingDirectory: fixturesDirectory, environment: [:])
+                let shader = try config.metalShader(from: entry.source, to: entry.destination)
+                XCTAssertTrue(shader.source.contains("kernel void ocio_kernel"), entry.name)
+                XCTAssertTrue(shader.source.contains("output[index] = pixel"), entry.name)
+            } catch { XCTFail("\(entry.name): \(error)") }
         }
     }
 
@@ -97,21 +99,65 @@ final class NativeCompilerTests: XCTestCase {
         XCTAssertThrowsError(try CDLXMLFile.read("<ColorCorrection>", cccID: nil))
     }
 
+    func testCLFIntegerNormalizationAndRawHalfDecode() throws {
+        let matrix = try CTFFile.read("""
+        <ProcessList><Matrix inBitDepth="10i" outBitDepth="12i"><Array dim="3 4">
+        4 0 0 409.5 0 4 0 0 0 0 4 0
+        </Array></Matrix></ProcessList>
+        """, relativeTo: fixturesDirectory)
+        guard case let .transform(transform) = matrix[0] else { return XCTFail("expected matrix") }
+        let p = NativeParameters(transform.parameters, owner: "matrix")
+        XCTAssertEqual(try p.vector("matrix", count: 16)[0], 4092.0 / 4095.0, accuracy: 1e-12)
+        XCTAssertEqual(try p.vector("offset", count: 4)[0], 0.1, accuracy: 1e-12)
+        let raw = try CTFFile.read("""
+        <ProcessList><LUT1D inBitDepth="32f" outBitDepth="32f" rawHalfs="true"><Array dim="2 1">0 15360</Array></LUT1D></ProcessList>
+        """, relativeTo: fixturesDirectory)
+        guard case let .configuredLUT(lut, _, _) = raw[0] else { return XCTFail("expected raw-half LUT") }
+        XCTAssertEqual(lut.values, [0, 0, 0, 1, 1, 1])
+        XCTAssertEqual(CTFFile.decodeHalfBits(1), Float(1.0 / 16777216.0))
+        XCTAssertEqual(CTFFile.decodeHalfBits(0x0400), Float(1.0 / 16384.0))
+        XCTAssertEqual(CTFFile.decodeHalfBits(0xfbff), -65504)
+        XCTAssertEqual(CTFFile.decodeHalfBits(0x8000).bitPattern, 0x80000000)
+        XCTAssertTrue(CTFFile.decodeHalfBits(0x7c00).isInfinite)
+        XCTAssertTrue(CTFFile.decodeHalfBits(0x7e00).isNaN)
+        XCTAssertThrowsError(try ICCProfile.read(Data(repeating: 0, count: 127)))
+        XCTAssertThrowsError(try CTFFile.read("""
+        <ProcessList><LUT1D inBitDepth="32f" outBitDepth="32f" halfDomain="true"><Array dim="2 1">0 1</Array></LUT1D></ProcessList>
+        """, relativeTo: fixturesDirectory))
+    }
+
+    func testProgrammaticLUTTexturePackingAndInverseCompilation() throws {
+        let config = try OCIOConfigDocument(yaml: "ocio_profile_version: 2.5\ncolorspaces: []")
+        let values = (0...8192).flatMap { index -> [Float] in let x = Float(index) / 8192; return [x, x, x] }
+        let lut = try OCIOLUTFile.lut(dimension: 1, size: 8193, values: values)
+        let stages = try config.nativeStages(steps: [OCIOConfigTransformStep(transform: OCIOConfigTransform(lut: lut), label: "memory")])
+        guard case let .shader(shader) = stages[0] else { return XCTFail("expected shader") }
+        XCTAssertEqual(shader.textures[0].width, 4096)
+        XCTAssertEqual(shader.textures[0].height, 3)
+        XCTAssertEqual(shader.textures[0].values[8192 * 3], 1)
+        let inverse = try config.nativeStages(steps: [OCIOConfigTransformStep(transform: OCIOConfigTransform(lut: lut, direction: .inverse), label: "inverse")])
+        guard case let .shader(inverseShader) = inverse[0] else { return XCTFail("expected inverse shader") }
+        XCTAssertTrue(inverseShader.source.contains("while (high - low > 1u)"))
+        XCTAssertThrowsError(try OCIOLUTFile.lut(dimension: 2, size: 2, values: [0, 0, 0, 1, 1, 1]))
+    }
+
     #if canImport(Metal)
     func testMetalMatchesOCIOOracleForCustomOperations() throws {
         guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("Metal hardware unavailable; numerical native-shader verification did not run") }
         let engine = try MetalColorEngine(device: device)
         let reference = try references()
         for entry in reference.cases {
-            let config = try OCIOConfigDocument(yaml: entry.yaml, workingDirectory: fixturesDirectory, environment: [:])
-            let processor = try engine.nativeProcessor(configuration: config, source: entry.source, destination: entry.destination)
-            let actual = try processor.processRGBA(entry.input.flatMap { $0 })
-            let expected = entry.expected.flatMap { $0 }
-            XCTAssertEqual(actual.count, expected.count)
-            for index in actual.indices {
-                let tolerance = 0.00003 + 0.0002 * abs(expected[index])
-                XCTAssertEqual(actual[index], expected[index], accuracy: tolerance, "\(entry.name), channel \(index), OCIO \(reference.oracleVersion)")
-            }
+            do {
+                let config = try OCIOConfigDocument(yaml: entry.yaml, workingDirectory: fixturesDirectory, environment: [:])
+                let processor = try engine.nativeProcessor(configuration: config, source: entry.source, destination: entry.destination)
+                let actual = try processor.processRGBA(entry.input.flatMap { $0 })
+                let expected = entry.expected.flatMap { $0 }
+                XCTAssertEqual(actual.count, expected.count)
+                for index in actual.indices {
+                    let tolerance = 0.00003 + 0.0002 * abs(expected[index])
+                    XCTAssertEqual(actual[index], expected[index], accuracy: tolerance, "\(entry.name), channel \(index), OCIO \(reference.oracleVersion)")
+                }
+            } catch { XCTFail("\(entry.name): \(error)") }
         }
     }
     #endif

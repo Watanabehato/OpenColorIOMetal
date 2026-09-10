@@ -9,8 +9,14 @@ final class NativeFixedFunctionTests: XCTestCase {
     private struct References: Decodable {
         let schemaVersion: Int
         let oracleVersion: String
+        let cpuReference: CPUReference
+        let validationMetrics: [String: String]
         let supportedStyleCount: Int
         let cases: [Reference]
+    }
+    private struct CPUReference: Decodable {
+        let optimizationFlags: Int
+        let optimizationPolicy: String
     }
     private struct Reference: Decodable {
         let name: String
@@ -39,6 +45,9 @@ final class NativeFixedFunctionTests: XCTestCase {
     func testAllFixedFunctionStylesCompileAndMatchOracleTables() throws {
         let reference = try references()
         XCTAssertEqual(reference.schemaVersion, 1)
+        XCTAssertEqual(reference.cpuReference.optimizationPolicy,
+                       "OPTIMIZATION_DEFAULT with OPTIMIZATION_FAST_LOG_EXP_POW and OPTIMIZATION_LUT_INV_FAST disabled")
+        XCTAssertNotNil(reference.validationMetrics["neutralJMh"])
         XCTAssertEqual(reference.supportedStyleCount, 21)
         XCTAssertEqual(Set(reference.cases.map(\.style)).count, 21)
         XCTAssertGreaterThanOrEqual(reference.cases.count, 64)
@@ -124,9 +133,34 @@ final class NativeFixedFunctionTests: XCTestCase {
             let expected = entry.expected.flatMap { $0 }
             XCTAssertEqual(actual.count, expected.count, entry.name)
             for scalar in expected.indices {
+                let message = "\(entry.name) channel \(scalar), OCIO \(reference.oracleVersion)"
+                if entry.style.lowercased() == "aces2_rgb_to_jmh", entry.name.hasSuffix("-forward"), scalar % 4 == 2 {
+                    let expectedM = expected[scalar - 1]
+                    // Hue is undefined at M=0. Float32 matrix cancellation may rotate
+                    // the tiny residual of neutral gray by any angle. Below the existing
+                    // absolute chroma tolerance, compare the actual opponent coordinates
+                    // a=M*cos(h), b=M*sin(h), with the same absolute/relative tolerance.
+                    if expectedM <= entry.absoluteTolerance {
+                        let expectedAngle = Double(expected[scalar]) * .pi / 180
+                        let actualAngle = Double(actual[scalar]) * .pi / 180
+                        let expectedAB = [Double(expectedM) * cos(expectedAngle), Double(expectedM) * sin(expectedAngle)]
+                        let actualAB = [Double(actual[scalar - 1]) * cos(actualAngle), Double(actual[scalar - 1]) * sin(actualAngle)]
+                        for axis in 0..<2 {
+                            XCTAssertEqual(actualAB[axis], expectedAB[axis],
+                                accuracy: Double(entry.absoluteTolerance) + Double(entry.relativeTolerance) * abs(expectedAB[axis]), message)
+                        }
+                    } else {
+                        // Nonneutral hue retains the original strict angular tolerance;
+                        // 0 and 360 degrees denote the same hue.
+                        let delta = abs((actual[scalar] - expected[scalar]).truncatingRemainder(dividingBy: 360))
+                        XCTAssertEqual(min(delta, 360 - delta), 0,
+                            accuracy: entry.absoluteTolerance + entry.relativeTolerance * abs(expected[scalar]), message)
+                    }
+                    continue
+                }
                 XCTAssertEqual(actual[scalar], expected[scalar],
                     accuracy: entry.absoluteTolerance + entry.relativeTolerance * abs(expected[scalar]),
-                    "\(entry.name) channel \(scalar), OCIO \(reference.oracleVersion)")
+                    message)
             }
         }
     }

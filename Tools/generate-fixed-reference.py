@@ -12,6 +12,8 @@ from pathlib import Path
 
 import numpy as np
 import PyOpenColorIO as ocio
+from gpu_corrections import correct_fixed_shader
+from oracle_helpers import CPU_REFERENCE_METADATA, cpu_reference
 
 ROOT = Path(__file__).resolve().parents[1]
 PARAMETERLESS = [
@@ -46,7 +48,7 @@ def regenerate_parameterless(target):
             shader = descriptor(ocio.Config.CreateRaw().getProcessor(transform))
             if list(shader.getTextures()) or list(shader.get3DTextures()) or list(shader.getUniforms()):
                 raise RuntimeError(f"Parameterless {name} gained external shader dependencies; update native port")
-            source = shader.getShaderText()
+            source = correct_fixed_shader(shader.getShaderText())
             body = source.split("float4 pixel = inPixel;", 1)[1].split("return pixel;", 1)[0].strip()
             if '\\' in body or '"""' in body:
                 raise RuntimeError("Shader requires explicit Swift string escaping")
@@ -60,8 +62,8 @@ def regenerate_parameterless(target):
     start = original.index("    private static func parameterlessFixedFunction(")
     end = original.index("\n}\n\nextension OCIONativeCompiler {", start)
     updated = original[:start] + result + original[end:]
-    updated = re.sub(r"// Parameterless MSL equations extracted verbatim from OpenColorIO .*\.",
-                     f"// Parameterless MSL equations extracted verbatim from OpenColorIO {ocio.__version__}.", updated)
+    updated = re.sub(r"// Parameterless MSL equations (?:extracted verbatim|adapted) from OpenColorIO .*\.",
+                     f"// Parameterless MSL equations adapted from OpenColorIO {ocio.__version__}; CPU-equivalent Glow/PQ corrections.", updated)
     target.write_text(updated, encoding="utf-8")
 
 
@@ -131,7 +133,7 @@ def main():
         for inverse in [False, True]:
             source, destination = ("Linear", "Encoded") if inverse else ("Encoded", "Linear")
             processor = config.getProcessor(source, destination)
-            cpu = processor.getDefaultCPUProcessor()
+            cpu = cpu_reference(processor)
             inputs = test_input(short, inverse)
             expected = [cpu.applyRGBA(pixel) for pixel in inputs]
             if not np.isfinite(expected).all():
@@ -143,7 +145,10 @@ def main():
                           "relativeTolerance": 0.0005})
     target = ROOT / "Tests/OpenColorIOConfigTests/Fixtures/fixed-reference.json"
     target.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"schemaVersion": 1, "oracleVersion": ocio.__version__, "supportedStyleCount": len(supported),
+    payload = {"schemaVersion": 1, "oracleVersion": ocio.__version__, "cpuReference": CPU_REFERENCE_METADATA,
+               "validationMetrics": {"neutralJMh": "When M <= absoluteTolerance, compare M*cos(h) and M*sin(h) with unchanged color-coordinate tolerances; hue is undefined at M=0.",
+                                     "nonneutralJMh": "Compare hue in degrees modulo 360 with the original angular tolerance."},
+               "supportedStyleCount": len(supported),
                "cases": cases}
     target.write_text(json.dumps(payload, indent=2, allow_nan=False) + "\n", encoding="utf-8")
     print(f"Generated {len(cases)} fixed-function CPU/LUT cases from OCIO {ocio.__version__}: {target}")

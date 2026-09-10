@@ -41,6 +41,17 @@ public struct OCIOConfigTransform: Sendable, Equatable {
     public let parameters: [String: YAMLValue]
     public let direction: OCIOConfigDirection
     public let children: [OCIOConfigTransform]
+    public let lut: OCIONativeLUT?
+
+    /// Constructs an in-memory LUT operation. Table values use RGB triples and
+    /// the 3D table has red varying fastest, matching the Metal texture layout.
+    public init(lut: OCIONativeLUT, interpolation: String = "default", direction: OCIOConfigDirection = .forward) {
+        type = lut.dimension == 1 ? "Lut1DTransform" : "Lut3DTransform"
+        parameters = ["interpolation": .scalar(interpolation)]
+        self.direction = direction
+        children = []
+        self.lut = lut
+    }
 
     public init(yaml: YAMLValue) throws {
         guard let type = yaml.tag else { throw OCIOConfigError.invalid("transform requires an explicit YAML type tag") }
@@ -51,6 +62,7 @@ public struct OCIOConfigTransform: Sendable, Equatable {
             throw OCIOConfigError.invalid("\(type) direction '\(directionText)' is invalid")
         }
         self.type = type; self.parameters = parameters; self.direction = direction
+        self.lut = nil
         if type == "GroupTransform" {
             guard parameters["children"] == nil || parameters["children"]?.array != nil else {
                 throw OCIOConfigError.invalid("GroupTransform children must be a sequence")

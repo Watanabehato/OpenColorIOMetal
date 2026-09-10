@@ -12,6 +12,7 @@ import math
 import random
 import PyOpenColorIO as ocio
 from gpu_corrections import correct_hue_shader
+from oracle_helpers import CPU_REFERENCE_METADATA, cpu_reference
 
 MARKER = "// BEGIN GENERATED GRADING MSL TEMPLATES"
 
@@ -150,12 +151,12 @@ def generate_fixtures():
                         uniforms[field] = {"kind":"boolean" if isinstance(val,bool) else "vector" if isinstance(val,list) else "scalar",
                                            "values": [float(val)] if not isinstance(val,list) else val}
                     expected = inputs.copy()
-                    ocio.Config.CreateRaw().getProcessor(transform).getDefaultCPUProcessor().applyRGBA(expected)
+                    cpu_reference(ocio.Config.CreateRaw().getProcessor(transform)).applyRGBA(expected)
                     cases.append({"name":f"{kind}.{style}.{variant}.{'inverse' if inverse else 'forward'}", "type":kind,
                                   "inverse":inverse, "parameters":json.dumps(parameters), "uniforms":uniforms, "yaml":yaml,
                                   "input":inputs.reshape(-1).tolist(),
                                   "expected":[str(float(v)) for v in expected.reshape(-1)]})
-    return {"schemaVersion":1,"oracleVersion":ocio.__version__,"cases":cases}
+    return {"schemaVersion":1,"oracleVersion":ocio.__version__,"cpuReference":CPU_REFERENCE_METADATA,"cases":cases}
 
 
 def main():

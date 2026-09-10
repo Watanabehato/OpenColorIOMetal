@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright Contributors to the OpenColorIO Project.
-// Parameterless MSL equations extracted verbatim from OpenColorIO 2.5.2.
+// Parameterless MSL equations adapted from OpenColorIO 2.5.2; CPU-equivalent Glow/PQ corrections.
 // Parameterized equations are translated from FixedFunctionOpGPU.cpp.
 import Foundation
 
@@ -158,9 +158,12 @@ extension OCIONativeCompiler {
                     float s = 0.5 * (1. + sign(x) * (1. - t * t));
                     float GlowGain = 0.075000003 * s;
                     float GlowMid = 0.100000001;
-                    float glowGainOut = mix(-GlowGain / (1. + GlowGain), GlowGain * (GlowMid / YC - 0.5) / (GlowGain * 0.5 - 1.), float( YC > (1. + GlowGain) * GlowMid * 2. / 3. ));
-                    glowGainOut = mix(glowGainOut, 0., float( YC > GlowMid * 2. ));
-                    pixel.rgb = pixel.rgb * glowGainOut + pixel.rgb;
+                    // Branch before division: an inactive 0/0 must not contaminate black.
+                    float glowGainOut;
+                    if (YC >= GlowMid * 2.) { glowGainOut = 0.; }
+                    else if (YC <= (1. + GlowGain) * GlowMid * 2. / 3.) { glowGainOut = -GlowGain / (1. + GlowGain); }
+                    else { glowGainOut = GlowGain * (GlowMid / YC - 0.5) / (GlowGain * 0.5 - 1.); }
+                    pixel.rgb *= (1. + glowGainOut);
                   }
                 """
             }
@@ -178,9 +181,12 @@ extension OCIONativeCompiler {
                 float s = 0.5 * (1. + sign(x) * (1. - t * t));
                 float GlowGain = 0.075000003 * s;
                 float GlowMid = 0.100000001;
-                float glowGainOut = mix(GlowGain, GlowGain * (GlowMid / YC - 0.5), float( YC > GlowMid * 2. / 3. ));
-                glowGainOut = mix(glowGainOut, 0., float( YC > GlowMid * 2. ));
-                pixel.rgb = pixel.rgb * glowGainOut + pixel.rgb;
+                // Branch before division: an inactive 0/0 must not contaminate black.
+                float glowGainOut;
+                if (YC >= GlowMid * 2.) { glowGainOut = 0.; }
+                else if (YC <= GlowMid * 2. / 3.) { glowGainOut = GlowGain; }
+                else { glowGainOut = GlowGain * (GlowMid / YC - 0.5); }
+                pixel.rgb *= (1. + glowGainOut);
               }
             """
         case "aces_glow10":
@@ -199,9 +205,12 @@ extension OCIONativeCompiler {
                     float s = 0.5 * (1. + sign(x) * (1. - t * t));
                     float GlowGain = 0.0500000007 * s;
                     float GlowMid = 0.0799999982;
-                    float glowGainOut = mix(-GlowGain / (1. + GlowGain), GlowGain * (GlowMid / YC - 0.5) / (GlowGain * 0.5 - 1.), float( YC > (1. + GlowGain) * GlowMid * 2. / 3. ));
-                    glowGainOut = mix(glowGainOut, 0., float( YC > GlowMid * 2. ));
-                    pixel.rgb = pixel.rgb * glowGainOut + pixel.rgb;
+                    // Branch before division: an inactive 0/0 must not contaminate black.
+                    float glowGainOut;
+                    if (YC >= GlowMid * 2.) { glowGainOut = 0.; }
+                    else if (YC <= (1. + GlowGain) * GlowMid * 2. / 3.) { glowGainOut = -GlowGain / (1. + GlowGain); }
+                    else { glowGainOut = GlowGain * (GlowMid / YC - 0.5) / (GlowGain * 0.5 - 1.); }
+                    pixel.rgb *= (1. + glowGainOut);
                   }
                 """
             }
@@ -219,9 +228,12 @@ extension OCIONativeCompiler {
                 float s = 0.5 * (1. + sign(x) * (1. - t * t));
                 float GlowGain = 0.0500000007 * s;
                 float GlowMid = 0.0799999982;
-                float glowGainOut = mix(GlowGain, GlowGain * (GlowMid / YC - 0.5), float( YC > GlowMid * 2. / 3. ));
-                glowGainOut = mix(glowGainOut, 0., float( YC > GlowMid * 2. ));
-                pixel.rgb = pixel.rgb * glowGainOut + pixel.rgb;
+                // Branch before division: an inactive 0/0 must not contaminate black.
+                float glowGainOut;
+                if (YC >= GlowMid * 2.) { glowGainOut = 0.; }
+                else if (YC <= GlowMid * 2. / 3.) { glowGainOut = GlowGain; }
+                else { glowGainOut = GlowGain * (GlowMid / YC - 0.5); }
+                pixel.rgb *= (1. + glowGainOut);
               }
             """
         case "aces_darktodim10":
@@ -388,7 +400,7 @@ extension OCIONativeCompiler {
                 // Add FixedFunction 'PQ_TO_Lin' processing
                   
                   {
-                    float3 sign3 = sign(pixel.rgb);
+                    float3 sign3 = copysign(float3(1.), pixel.rgb);
                     float3 x = pow(abs(pixel.rgb), float3(0.012683313515655966, 0.012683313515655966, 0.012683313515655966));
                     pixel.rgb = 100. * sign3 * pow(max(float3(0., 0., 0.), x - float3(0.8359375, 0.8359375, 0.8359375)) / (float3(18.8515625, 18.8515625, 18.8515625) - 18.6875 * x), float3(6.2773946360153259, 6.2773946360153259, 6.2773946360153259));
                   }
@@ -398,7 +410,7 @@ extension OCIONativeCompiler {
             // Add FixedFunction 'Lin_TO_PQ' processing
               
               {
-                float3 sign3 = sign(pixel.rgb);
+                float3 sign3 = copysign(float3(1.), pixel.rgb);
                 float3 L = abs(0.01 * pixel.rgb);
                 float3 y = pow(L, float3(0.1593017578125, 0.1593017578125, 0.1593017578125));
                 float3 ratpoly = (float3(0.8359375, 0.8359375, 0.8359375) + 18.8515625 * y) / (float3(1., 1., 1.) + 18.6875 * y);

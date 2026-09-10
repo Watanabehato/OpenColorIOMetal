@@ -43,6 +43,33 @@ GPU backend become LUT resources. Dynamic OCIO controls are frozen at their
 configured default using `OPTIMIZATION_NO_DYNAMIC_PROPERTIES`; runtime user
 controls are represented separately by the native Swift transform API.
 
+`gpu_corrections.py` applies two narrow fixes to the pinned upstream Hue shader
+generator so exported shaders agree with the upstream CPU evaluator: video
+luminance uses its additive formula, and inverse HueFX includes the lower
+periodic knot shift. Native grading template generation uses the same fixes.
+`generate-export-reference.py` exports a separate development archive from
+`Fixtures/hue-regression.ocio` and three analytical test LUTs, with 121 direct
+pairs and 22 view directions. It exercises video/log/linear styles, HSY bypass,
+custom slopes, mixed operations and all three texture dimensions against direct
+CPU references. CI executes this archive on Metal; its synthetic spaces are
+excluded from the shipped catalogue. Glow's inactive division is also guarded
+before evaluating black, and PQ preserves the CPU sign convention at zero.
+
+All reference generators share `oracle_helpers.py`: default optimizations remain
+enabled except `OPTIMIZATION_FAST_LOG_EXP_POW` and `OPTIMIZATION_LUT_INV_FAST`.
+The first uses approximate powers (for example, PQ inverse at 0.9 becomes
+38.998226 instead of 39.0564465); the second resamples inverse LUTs and moves
+plateau boundaries. References use exact inverse search and accurate scalar
+powers. Their `cpuReference` metadata records the optimization flags and 32f
+input/output depth. The numerical tolerances are not widened for these fixes.
+
+```sh
+python Tools/generate-export-reference.py --output build/export-reference \
+  --upstream-source build/upstream --oracle-build-root build/oracle
+dist/Debug/ocio-metal validate --gpu --archive build/export-reference \
+  --output dist/export-validation.json
+```
+
 ## Archive schema 1
 
 `manifest.json` contains `upstream`, `defaultConfiguration`, `configurations`,
@@ -67,8 +94,11 @@ Textures are little-endian IEEE-754 float32, with x varying fastest. A 3D OCIO
 LUT uses x=blue, y=green, z=red and the original MSL samples `.zyx` coordinates.
 The native loader must upload without transposing and expand RGB samples to
 RGBA storage. Tetrahedral interpolation is performed analytically in the
-shader with a nearest sampler. Samplers clamp to edge; they are embedded in the
-kernel. Constructor arguments follow upstream's 3D texture/sampler pairs first,
+shader with a nearest sampler. Linear filtering uses explicit Float32 texture
+reads and interpolation, avoiding hardware filtering's quantized weights;
+normalized coordinates and clamp-to-edge behavior are preserved in 1D/2D/3D.
+Sampler arguments remain embedded in the kernel for upstream API compatibility.
+Constructor arguments follow upstream's 3D texture/sampler pairs first,
 then its 1D/2D texture/sampler pairs. Freezing dynamic properties eliminates
 uniform arguments and the need to infer a buffer layout.
 

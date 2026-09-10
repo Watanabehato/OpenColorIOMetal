@@ -23,6 +23,7 @@ jobs:
         run: |
           bash Scripts/build-framework.sh
           CONFIGURATION=Debug bash Scripts/build-framework.sh
+          ALLOW_MISSING_CATALOGUE=1 bash Scripts/build-cli.sh
       # This compiler check has no generated catalogue. Release artifacts are only
       # uploaded by build.yml after the complete reference and Metal gates pass.
   native:
@@ -31,7 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Compile Swift 6 API and test native configuration processing
-        run: swift test --filter 'YAMLTests|ConfigurationTests|Native|Grading' 2>&1 | tee swift-tests.log
+        run: swift test --filter 'YAMLTests|ConfigurationTests|Rules|Native|Grading' 2>&1 | tee swift-tests.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:

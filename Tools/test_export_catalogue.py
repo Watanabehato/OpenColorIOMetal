@@ -6,8 +6,9 @@ import unittest
 
 import numpy as np
 import PyOpenColorIO as ocio
-from export_catalogue import Exporter
+from export_catalogue import Exporter, precise_texture_sampling
 from gpu_corrections import correct_hue_shader
+from oracle_helpers import CPU_OPTIMIZATION_FLAGS, cpu_reference
 
 
 class ExportTests(unittest.TestCase):
@@ -136,8 +137,27 @@ class ExportTests(unittest.TestCase):
         spec.loader.exec_module(module)
         result = module.generate(self.root, {"repository": "test", "commit": "test", "version": ocio.__version__})
         self.assertTrue(result["passed"])
-        self.assertEqual(result["pairs"], 64)
-        self.assertEqual(result["validationCases"], 80)
+        self.assertEqual(result["pairs"], 121)
+        self.assertEqual(result["validationCases"], 143)
+
+    def test_linear_texture_sampling_uses_full_float32_for_each_dimension(self):
+        for dimension in (1, 2, 3):
+            metadata = {"name": "custom_lut", "samplerName": "custom_sampler", "dimension": dimension, "interpolation": "linear"}
+            source = "float4 value = custom_lut.sample(custom_sampler, position);"
+            corrected = precise_texture_sampling(source, [metadata])
+            self.assertIn(f"ocio_precise_sample_{dimension}d(custom_lut, position)", corrected)
+            self.assertIn("lut.read(", corrected)
+            self.assertNotIn(".sample(", corrected)
+            metadata["interpolation"] = "nearest"
+            self.assertEqual(precise_texture_sampling(source, [metadata]), source)
+
+    def test_cpu_reference_uses_exact_inverse_lut_at_a_plateau(self):
+        path = Path(__file__).parent.parent / "Tests/OpenColorIOConfigTests/Fixtures/Legacy/logtolin_8to8.lut"
+        processor = ocio.Config.CreateRaw().getProcessor(ocio.FileTransform(src=str(path.resolve()), direction=ocio.TRANSFORM_DIR_INVERSE))
+        precise = cpu_reference(processor).applyRGB([.003, .04, .18])
+        self.assertAlmostEqual(precise[1], .16156864166259766, places=7)
+        self.assertEqual(int(CPU_OPTIMIZATION_FLAGS) & int(ocio.OPTIMIZATION_LUT_INV_FAST), 0)
+        self.assertEqual(int(CPU_OPTIMIZATION_FLAGS) & int(ocio.OPTIMIZATION_FAST_LOG_EXP_POW), 0)
 
 
 if __name__ == "__main__":

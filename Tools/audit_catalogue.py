@@ -29,6 +29,15 @@ def audit(root, require_release=True, compare_registry=False):
     check(coverage["complete"] and not coverage["failures"], "Export reported missing conversions")
     check(not require_release or coverage["releaseEligible"], "Development oracle may not be released")
     check(manifest["upstream"] == coverage["upstream"], "Provenance mismatch")
+    reference = validation.get("cpuReference")
+    check(isinstance(reference, dict) and reference == manifest.get("cpuReference") == coverage.get("cpuReference"),
+          "CPU reference optimization provenance mismatch")
+    check(reference.get("inputBitDepth") == reference.get("outputBitDepth") == "32f",
+          "CPU reference must use Float32 input and output")
+    flags = reference.get("optimizationFlags")
+    # Public OCIO optimization values: FAST_LOG_EXP_POW=1<<26, LUT_INV_FAST=1<<25.
+    check(isinstance(flags, int) and flags & ((1 << 26) | (1 << 25)) == 0,
+          "CPU reference enables approximate powers or resampled inverse LUTs")
     checked_files = set()
     def resource(path, expected_size=None):
         resolved = (root / path).resolve()

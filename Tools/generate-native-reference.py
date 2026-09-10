@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 import PyOpenColorIO as ocio
+from oracle_helpers import CPU_REFERENCE_METADATA, cpu_reference
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "Tests" / "OpenColorIOConfigTests" / "Fixtures"
@@ -60,7 +61,7 @@ def main():
         config = ocio.Config.CreateFromStream(yaml)
         config.setWorkingDir(str(FIXTURES))
         for direction, source, destination in [("forward", "Encoded", "Linear"), ("inverse", "Linear", "Encoded")]:
-            processor = config.getProcessor(source, destination).getDefaultCPUProcessor()
+            processor = cpu_reference(config.getProcessor(source, destination))
             inputs = PIXELS
             # Exponentiation overflow does not inform finite numerical accuracy.
             if (name.startswith("log") or name == "allocation-lg2") and direction == "inverse":
@@ -74,7 +75,7 @@ def main():
                           if direction == "forward" else [[-0.5, -0.01, 0.0, 0.25], [0.001, 0.3, 0.8, 0.5], [-2.0, 2.0, 1.0, 1.0]])
             expected = [processor.applyRGBA(pixel) for pixel in inputs]
             cases.append({"name": name + "-" + direction, "yaml": yaml, "source": source, "destination": destination, "input": inputs, "expected": expected})
-    output = {"schemaVersion": 1, "oracleVersion": ocio.__version__, "cases": cases}
+    output = {"schemaVersion": 1, "oracleVersion": ocio.__version__, "cpuReference": CPU_REFERENCE_METADATA, "cases": cases}
     target = FIXTURES / "native-reference.json"
     target.write_text(json.dumps(output, indent=2, allow_nan=False) + "\n", encoding="utf-8")
     print(f"Wrote {len(cases)} custom transform references with OCIO {ocio.__version__}: {target}")

@@ -55,20 +55,33 @@ catalogue; that does not imply native compilation of every custom operation.
 | ExponentWithLinearTransform | Linear and mirror negatives, per-channel gamma/offset, both directions |
 | ExposureContrastTransform | Linear, video and logarithmic equations, both directions; values compiled as snapshots |
 | FileTransform | Native loaders listed below, context resolution, reverse operation order |
-| FixedFunctionTransform | Implementation in progress; audit `FixedFunctions.swift` for exact supported styles |
-| GradingPrimaryTransform | Pending native custom compilation |
-| GradingHueCurveTransform | Pending native custom compilation |
-| GradingRGBCurveTransform | Pending native custom compilation |
-| GradingToneTransform | Pending native custom compilation |
+| FixedFunctionTransform | All 21 upstream-implemented public styles, both directions, including parameterized ACES 2; 64 MSL compilation and LUT preparation cases passed Actions; numerical corrections await the next GPU run |
+| GradingPrimaryTransform | Native primary controls in linear, log and video styles, both directions |
+| GradingHueCurveTransform | Native arbitrary curves, HueFX periodic inverse, HSY controls/bypass and custom slopes; CPU-equivalent video luminance and inverse-bound corrections |
+| GradingRGBCurveTransform | Native RGB/master curve spline evaluation and inversion |
+| GradingToneTransform | Native tone regions in linear, log and video styles, both directions |
 | GroupTransform | Recursive ordered children, reversed children and directions for inverse |
 | LogAffineTransform | Per-channel affine logarithm, both directions |
 | LogCameraTransform | Derived/authored linear segment and break, both directions |
 | LogTransform | Arbitrary valid base, both directions |
 | LookTransform | Process-space conversions, signed look lists, inverse order/directions |
-| Lut1DTransform | Native file LUT data path exists; direct custom YAML class compilation pending |
-| Lut3DTransform | Native file LUT data path exists; direct custom YAML class compilation pending |
+| Lut1DTransform | Native file and in-memory LUT data; ordinary and half domains; forward and inverse |
+| Lut3DTransform | Native file and in-memory LUT data; forward interpolation and tetrahedron inverse solving |
 | MatrixTransform | Full RGBA 4×4 and offset, native inverse; singular inverse rejected |
 | RangeTransform | Paired finite bounds, scale/offset, clamp/noClamp, both directions |
+
+Actions run `34346626970` (commit `699ab26`) passed all 144 custom grading GPU
+cases and their prepared-uniform comparisons using the developmental OCIO 2.5.2
+oracle. FixedFunction's 64 generated MSL kernels and native ACES 2 lookup-table
+comparisons also passed that run. Its numerical run exposed 12 Glow black NaNs,
+29 PQ comparisons against approximate CPU power, and 3 neutral-gray JMh hue
+comparisons. The source now branches before Glow division, uses precise CPU
+reference power, and compares neutral JMh opponent coordinates when chroma is
+below the unchanged absolute tolerance; nonneutral hue retains its original
+angular tolerance modulo 360. These corrections still require a new Actions GPU
+run. Exact pinned-source regeneration and full catalogue validation remain
+separate release gates. The two legacy public GamutMap02/GamutMap07 enums are
+also unimplemented by upstream and are rejected explicitly.
 
 Live dynamic exposure/contrast/gamma and grading property updates, CPU processors,
 packed/planar image descriptors, optimization flags, cache semantics, baking,
@@ -88,22 +101,30 @@ Upstream inventory is from `src/OpenColorIO/fileformats/FileFormat*.cpp`.
 | SPI `.spi3d` | Indexed RGB cube, duplicate/missing index checks, correct Metal texture order |
 | SPI `.spimtx` | 3×4 matrix with 16-bit-normalized offsets |
 | ASC `.cc`, `.ccc`, `.cdl` | Native XML parser; correction ID/index; SOP and saturation |
-| CLF/CTF | Pending |
-| Autodesk/Flame/Lustre `.3dl` | Pending |
-| Cinespace `.csp` | Pending |
-| Discreet `.lut` | Pending |
-| Houdini `.lut` | Pending |
-| ICC profiles | Pending |
-| Iridas `.itx`, `.look` | Pending |
-| Pandora `.mga`, `.m3d` | Pending |
-| Truelight `.cub` | Pending |
-| Nuke `.vf` | Pending |
+| CLF/CTF | Matrix, range, exponent/gamma, modern/legacy log, ASC CDL, exposure/contrast, fixed functions, grading, reference paths, LUT/InvLUT; integer normalization, halfDomain/rawHalfs, DW3 and two-entry IndexMap |
+| Autodesk/Flame/Lustre `.3dl` | Native text parsing, shaper/domain normalization and 3D tables |
+| Cinespace `.csp` | Native 1D/3D tables and nonuniform cubic pre-LUT resampling |
+| Discreet `.lut` | Native channel tables, integer/float output scaling and 65536-entry half domains |
+| Houdini `.lut` | Native 1D, 3D and combined shaper+3D tables |
+| ICC profiles | Native RGB matrix/TRC profiles; curve gamma/tables and parametric types 0–4; D50/D65 adaptation and upstream direction conventions |
+| Iridas `.itx`, `.look` | Native text/hex decoding and 3D tables |
+| Pandora `.mga`, `.m3d` | Native indexed 3D tables and output normalization |
+| Truelight `.cub` | Native shaper and 3D tables |
+| Nuke `.vf` | Native indexed 3D tables |
 
 Native LUT execution supports 1D linear/nearest and 3D trilinear/tetrahedral/nearest
-interpolation. Inverse 1D currently requires monotonic nonconstant channels;
-inverse 3D solving, nonmonotonic 1D inverse semantics, half-domain/raw-half LUTs,
-hue adjustment, index maps and all file-specific edge cases remain incomplete.
-Unsupported cases must remain explicit errors until implemented and verified.
+interpolation using explicit Float32 texture reads and weights. Ordinary 1D inverse
+flattens reversals and respects effective domains at flat endpoints. Half-domain
+inverse separates positive/negative code ranges and interpolates actual half-value
+distances. Inverse 3D searches the extrapolated cube's tetrahedra using a bounding
+tree. These implementations require differential numerical validation, including
+boundary and degenerate cases; implementation is not a blanket file-conformance claim.
+
+The CPU reference policy preserves default optimizations except approximate
+log/exp/pow and fast inverse LUT resampling. Inverse references therefore evaluate
+the exact upstream inverse solver. Reference JSON records this policy and oracle
+version. CTF CDL inverse-pair replacement follows the default upstream optimizer.
+CTF Reference alias resolution and general file/version diagnostics remain incomplete.
 
 ## Completion gates
 

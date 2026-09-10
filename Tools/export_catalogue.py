@@ -17,7 +17,8 @@ import re
 import subprocess
 import sys
 import time
-from gpu_corrections import correct_hue_shader
+from gpu_corrections import correct_fixed_shader, correct_hue_shader
+from oracle_helpers import CPU_REFERENCE_METADATA, cpu_reference
 
 REPOSITORY = "https://github.com/AcademySoftwareFoundation/OpenColorIO"
 
@@ -80,6 +81,63 @@ def verify_oracle(args, ocio):
     return {"repository": REPOSITORY, "commit": actual, "version": ocio.__version__}, release_eligible
 
 
+def precise_texture_sampling(shader, textures):
+    """Replace linear hardware weights with full Float32 read/interpolation.
+
+    Metal texture filtering may quantize fractional coordinates to eight bits.
+    OCIO analytical coordinates remain unchanged; these helpers implement the
+    same normalized, clamped sampling convention using explicit Float32 maths.
+    """
+    dimensions = set()
+    for texture in textures:
+        if texture["interpolation"] != "linear":
+            continue
+        dimension = texture["dimension"]
+        pattern = r"\b" + re.escape(texture["name"]) + r"\.sample\(\s*" + re.escape(texture["samplerName"]) + r"\s*,"
+        replacement = f"ocio_precise_sample_{dimension}d({texture['name']},"
+        shader, count = re.subn(pattern, replacement, shader)
+        if count == 0:
+            raise ValueError(f"Unrecognized linear texture sample for {texture['name']}")
+        dimensions.add(dimension)
+    helpers = []
+    if 1 in dimensions:
+        helpers.append("""
+inline float4 ocio_precise_sample_1d(texture1d<float> lut, float coordinate) {
+    uint last = lut.get_width() - 1u;
+    float position = clamp(coordinate * float(lut.get_width()) - 0.5f, 0.0f, float(last));
+    uint low = uint(floor(position)), high = min(low + 1u, last);
+    float fraction = position - float(low);
+    return mix(lut.read(low), lut.read(high), fraction);
+}
+""")
+    if 2 in dimensions:
+        helpers.append("""
+inline float4 ocio_precise_sample_2d(texture2d<float> lut, float2 coordinate) {
+    uint2 size = uint2(lut.get_width(), lut.get_height()), last = size - 1u;
+    float2 position = clamp(coordinate * float2(size) - 0.5f, float2(0.0f), float2(last));
+    uint2 low = uint2(floor(position)), high = min(low + 1u, last);
+    float2 fraction = position - float2(low);
+    return mix(mix(lut.read(low), lut.read(uint2(high.x, low.y)), fraction.x),
+               mix(lut.read(uint2(low.x, high.y)), lut.read(high), fraction.x), fraction.y);
+}
+""")
+    if 3 in dimensions:
+        helpers.append("""
+inline float4 ocio_precise_sample_3d(texture3d<float> lut, float3 coordinate) {
+    uint3 size = uint3(lut.get_width(), lut.get_height(), lut.get_depth()), last = size - 1u;
+    float3 position = clamp(coordinate * float3(size) - 0.5f, float3(0.0f), float3(last));
+    uint3 low = uint3(floor(position)), high = min(low + 1u, last);
+    float3 fraction = position - float3(low);
+    float4 z0 = mix(mix(lut.read(low), lut.read(uint3(high.x, low.y, low.z)), fraction.x),
+                    mix(lut.read(uint3(low.x, high.y, low.z)), lut.read(uint3(high.x, high.y, low.z)), fraction.x), fraction.y);
+    float4 z1 = mix(mix(lut.read(uint3(low.x, low.y, high.z)), lut.read(uint3(high.x, low.y, high.z)), fraction.x),
+                    mix(lut.read(uint3(low.x, high.y, high.z)), lut.read(high), fraction.x), fraction.y);
+    return mix(z0, z1, fraction.z);
+}
+""")
+    return "".join(helpers) + shader
+
+
 def wrap_kernel(shader, textures):
     """Wrap upstream's MSL free function, preserving its documented argument order."""
     declarations = ["device const float4 *input [[buffer(0)]]",
@@ -95,6 +153,7 @@ def wrap_kernel(shader, textures):
         call_args.extend((name, sampler))
     declarations.append("uint gid [[thread_position_in_grid]]")
     call_args.append("input[gid]")
+    shader = precise_texture_sampling(shader, textures)
     return ("#include <metal_stdlib>\nusing namespace metal;\n" + shader +
             "\nkernel void ocio_kernel(\n    " + ",\n    ".join(declarations) + ") {\n"
             "    if (gid >= count) return;\n" + "\n".join(body) +
@@ -161,7 +220,7 @@ class Exporter:
                 # Dimensions, rather than height, distinguishes a 1xN 2D texture.
                 dimension = 1 if texture.dimensions == ocio.GpuShaderDesc.TEXTURE_1D else 2
                 textures.append(self.texture(texture, dimension, len(textures)))
-            source = wrap_kernel(correct_hue_shader(desc.getShaderText()), textures)
+            source = wrap_kernel(correct_fixed_shader(correct_hue_shader(desc.getShaderText())), textures)
             shader = blob(self.root, "shaders", "metal", source.encode("utf-8"))
             definition = {"shader": shader, "kernel": "ocio_kernel", "textures": textures}
             transform_id = sha256(canonical_json(definition).encode("utf-8"))
@@ -178,7 +237,7 @@ class Exporter:
             # CPU oracle is the direct optimized pair, not a reference composed
             # from the exported stages. Always evaluate even for dedup shaders.
             reference = self.inputs.copy()
-            processor.getDefaultCPUProcessor().applyRGBA(reference)
+            cpu_reference(processor).applyRGBA(reference)
             expected = blob(self.root, "validation", "f32", reference.astype("<f4").tobytes())
             self.cases.append({"name": name, "pipeline": pipeline, "expected": expected,
                                "absoluteTolerance": 0.0005, "relativeTolerance": 0.0002})
@@ -296,10 +355,12 @@ def main():
         if definition["forward"] is not None and definition["inverse"] is not None:
             builtins.append(definition)
     default = next((name for name, _, _, is_default in registry if is_default), registry[0][0])
-    manifest = {"schemaVersion": 1, "upstream": upstream, "defaultConfiguration": default,
+    manifest = {"schemaVersion": 1, "upstream": upstream, "cpuReference": CPU_REFERENCE_METADATA,
+                "defaultConfiguration": default,
                 "configurations": configurations, "builtins": builtins,
                 "transforms": sorted(exporter.transforms.values(), key=lambda item: item["id"])}
-    validation = {"schemaVersion": 1, "input": exporter.inputs.reshape(-1).tolist(), "cases": exporter.cases}
+    validation = {"schemaVersion": 1, "cpuReference": CPU_REFERENCE_METADATA,
+                  "input": exporter.inputs.reshape(-1).tolist(), "cases": exporter.cases}
     coverage = {"schemaVersion": 1, "upstream": upstream, "releaseEligible": release_eligible,
                 "complete": not exporter.failures, "failures": exporter.failures,
                 "configurationCount": len(configurations), "builtinCount": len(builtins),
@@ -309,7 +370,7 @@ def main():
                 "uniqueTransformCount": len(exporter.transforms),
                 "elapsedSeconds": round(time.monotonic() - started, 3),
                 "scope": "All registry built-in configs, active/inactive scene/display/data spaces; every ordered pair; all display/view directions; every built-in/named transform and look direction",
-                "metalExecutionVerified": False}
+                "cpuReference": CPU_REFERENCE_METADATA, "metalExecutionVerified": False}
     write_json(output / "manifest.json", manifest)
     write_json(output / "validation.json", validation)
     write_json(output / "coverage.json", coverage)

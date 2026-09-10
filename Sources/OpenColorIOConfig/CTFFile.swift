@@ -40,7 +40,7 @@ public enum CTFFile {
             default: throw OCIOConfigError.unavailableTransform("CLF/CTF operation '\(node.name)' is not implemented")
             }
         }
-        return operations
+        return try optimizeCDLPairs(operations)
     }
     static func error(_ node: NativeXMLNode, _ message: String) -> OCIOConfigError { .invalid("\(node.name): \(message)") }
     static func bitDepth(_ text: String?, node: NativeXMLNode) throws -> Double {
@@ -203,7 +203,11 @@ public enum CTFFile {
             "rgb_to_jmh_20": ("ACES_RGB_TO_JMh_20", false), "jmh_to_rgb_20": ("ACES_RGB_TO_JMh_20", true),
             "tonescalecompress20fwd": ("ACES_TONESCALE_COMPRESS_20", false), "tonescalecompress20inv": ("ACES_TONESCALE_COMPRESS_20", true),
             "gamutcompress20fwd": ("ACES_GAMUT_COMPRESS_20", false), "gamutcompress20inv": ("ACES_GAMUT_COMPRESS_20", true),
-            "gammalog_to_lin": ("Lin_TO_GammaLog", true), "doublelog_to_lin": ("Lin_TO_DoubleLog", true)
+            "gammalog_to_lin": ("Lin_TO_GammaLog", true), "doublelog_to_lin": ("Lin_TO_DoubleLog", true),
+            "hsv_to_rgb": ("RGB_TO_HSV", true), "xyy_to_xyz": ("XYZ_TO_xyY", true),
+            "uvy_to_xyz": ("XYZ_TO_uvY", true), "luv_to_xyz": ("XYZ_TO_LUV", true),
+            "pq_to_lin": ("Lin_TO_PQ", true), "hsy_lin_to_rgb": ("RGB_TO_HSY_LIN", true),
+            "hsy_log_to_rgb": ("RGB_TO_HSY_LOG", true), "hsy_vid_to_rgb": ("RGB_TO_HSY_VID", true)
         ]
         let selected = aliases[style.lowercased()] ?? (style, false)
         var fields: [String: YAMLValue] = ["style": .scalar(selected.0)]
@@ -230,7 +234,7 @@ public enum CTFFile {
             let decoded: [Float] = try array.values.map { value in
                 if rawHalfs {
                     guard value >= 0, value <= 65535, value.rounded(.towardZero) == value else { throw error(node, "rawHalfs value must be a UInt16 bit pattern") }
-                    return Float(Float16(bitPattern: UInt16(value))) / Float(outputScale)
+                    return decodeHalfBits(UInt16(value)) / Float(outputScale)
                 }
                 return Float(value / outputScale)
             }
@@ -262,5 +266,47 @@ public enum CTFFile {
             "min_in_value": .scalar(String(pairs[0] / inputScale)), "max_in_value": .scalar(String(pairs[2] / inputScale)),
             "min_out_value": .scalar(String(pairs[1] / Double(size - 1))), "max_out_value": .scalar(String(pairs[3] / Double(size - 1)))
         ])
+    }
+
+    /// IEEE binary16 expansion using integer bits, also available on Intel Macs
+    /// where Swift's Float16 type is unavailable.
+    static func decodeHalfBits(_ bits: UInt16) -> Float {
+        let sign = UInt32(bits & 0x8000) << 16
+        let exponent = UInt32((bits >> 10) & 0x1f)
+        var mantissa = UInt32(bits & 0x03ff)
+        if exponent == 0 {
+            if mantissa == 0 { return Float(bitPattern: sign) }
+            var power: UInt32 = 113
+            while (mantissa & 0x0400) == 0 { mantissa <<= 1; power -= 1 }
+            return Float(bitPattern: sign | (power << 23) | ((mantissa & 0x03ff) << 13))
+        }
+        if exponent == 31 { return Float(bitPattern: sign | 0x7f800000 | (mantissa << 13)) }
+        return Float(bitPattern: sign | ((exponent + 112) << 23) | (mantissa << 13))
+    }
+
+    /// Match upstream's default CDL inverse-pair optimization. ASC pairs leave
+    /// a clamp; no-clamp pairs disappear. The clamp prevents further cancellation.
+    static func optimizeCDLPairs(_ input: [OCIONativeFileOperation]) throws -> [OCIONativeFileOperation] {
+        var result: [OCIONativeFileOperation] = []
+        for operation in input {
+            if case let .transform(current) = operation, current.type == "CDLTransform",
+               let last = result.last, case let .transform(previous) = last,
+               previous.type == current.type, previous.direction != current.direction {
+                var a = previous.parameters, b = current.parameters
+                a.removeValue(forKey: "direction"); b.removeValue(forKey: "direction")
+                if a == b {
+                    result.removeLast()
+                    if a["style"]?.string?.lowercased() == "asc" {
+                        result.append(.transform(try transform("RangeTransform", fields: [
+                            "min_in_value": .scalar("0"), "max_in_value": .scalar("1"),
+                            "min_out_value": .scalar("0"), "max_out_value": .scalar("1")
+                        ])))
+                    }
+                    continue
+                }
+            }
+            result.append(operation)
+        }
+        return result
     }
 }
